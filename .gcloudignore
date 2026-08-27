@@ -1,0 +1,17 @@
+# Upload context for gcloud builds submit. Without this file gcloud
+# falls back to .gitignore, which excludes memex/static/ — and then the
+# built SPA never reaches the image. Keep in sync with .dockerignore.
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+node_modules
+web
+terraform
+tests
+docs
+.claude
+*.tfstate*
+.env
