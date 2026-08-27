@@ -1,0 +1,23 @@
+[project]
+name = "memex"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "google-adk>=2.8.0",
+    "google-cloud-firestore>=2.29.0",
+    "google-cloud-secret-manager>=2.30.0",
+    "google-cloud-storage>=3.13.1",
+    "google-genai>=2.20.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "python-ulid>=4.0.1",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.5",
+]
