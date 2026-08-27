@@ -10,8 +10,8 @@ auth=(-H "Authorization: Bearer ${MEMEX_KEY}")
 
 say() { printf '\n== %s\n' "$*"; }
 
-say "healthz"
-curl -fsS "${MEMEX_URL}/healthz"
+say "health"
+curl -fsS "${MEMEX_URL}/health"
 
 say "text capture (sync enrichment)"
 note_id=$(curl -fsS "${auth[@]}" -H 'Content-Type: application/json' \

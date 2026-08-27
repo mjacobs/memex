@@ -57,6 +57,9 @@ def create_app() -> FastAPI:
             status_code=exc.status_code, content=error_body(code, str(exc.detail))
         )
 
+    # GFE intercepts /healthz on run.app domains (Google-404s it),
+    # so /health is the deployed path; /healthz kept for local habit.
+    @app.get("/health")
     @app.get("/healthz")
     def healthz() -> dict:
         return {"ok": True}

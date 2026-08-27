@@ -35,3 +35,7 @@ def test_device_id_resolved_from_key(client, agent_stub):
     )
     assert r.status_code == 201
     assert r.json()["capture"]["device_id"] == "phone"
+
+
+def test_health_alias_needs_no_auth(client):
+    assert client.get("/health").status_code == 200

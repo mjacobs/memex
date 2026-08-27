@@ -166,7 +166,7 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `POST /api/v1/approvals/{id}/reject` |                                                    | `200 {approval}`                           |
 | `GET /api/v1/routines/runs`          | `?limit=20`                                        | `200 {runs: […]}` (traces elided)          |
 | `GET /api/v1/routines/runs/{id}`     |                                                    | `200 {run}` incl. `trace`                  |
-| `GET /healthz`                       | no auth                                            | `200 {"ok": true}`                         |
+| `GET /health` (alias `/healthz`)     | no auth                                            | `200 {"ok": true}`                         |
 
 Internal (OIDC-verified, no bearer):
 
