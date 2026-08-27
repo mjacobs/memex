@@ -72,4 +72,4 @@ rotating keys.
 - **Audio lifecycle**: raw audio objects are deleted after 30 days
   (`audio_retention_days`); Firestore keeps the transcript.
 - **Scheduler**: `daily_review` at 09:00, `nightly_digest` at 03:00, both in
-  `time_zone` (default `America/New_York`).
+  `time_zone` (default `America/Los_Angeles`).
