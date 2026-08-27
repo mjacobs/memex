@@ -17,7 +17,11 @@ def test_spa_fallback_serves_index(fs, monkeypatch, tmp_path):
     assert client.get("/tasks/somewhere/deep").text == "<html>memex</html>"
 
 
-def test_no_static_dir_returns_contract_404(fs, client):
+def test_no_static_dir_returns_contract_404(fs, monkeypatch, tmp_path):
+    # Force the no-static-dir condition; the real memex/static may exist
+    # once the frontend has been built.
+    monkeypatch.setattr(memex.api.app, "STATIC_DIR", tmp_path / "absent")
+    client = TestClient(memex.api.app.create_app())
     r = client.get("/definitely-not-here")
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "not_found"
