@@ -34,6 +34,8 @@ def verify_internal(request: Request) -> dict:
     if not audience:  # local dev
         return {}
     token = _bearer_token(request)
+    if token.count(".") != 2:  # device keys / junk are not JWTs; skip cert fetch
+        raise ApiError(401, "unauthorized", "expected a Google-signed OIDC token")
     try:
         from google.auth.transport import requests as ga_requests
         from google.oauth2 import id_token as google_id_token
