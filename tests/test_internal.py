@@ -152,6 +152,11 @@ def test_internal_oidc_claims_checks(client, monkeypatch, agent_stub):
     claims["email"] = "attacker@other.iam.gserviceaccount.com"
     assert client.post(tick, headers=hdr).status_code == 401
 
+    # full push-endpoint audience (host + path) also passes
+    claims["aud"] = "https://testserver/internal/routines/daily_review/tick"
+    claims["email"] = "memex-trigger@p.iam.gserviceaccount.com"
+    assert client.post(tick, headers=hdr).status_code == 200
+
     # configured audience + allowed invoker passes auth
     claims["aud"] = "https://memex-123.us-central1.run.app"
     claims["email"] = "memex-trigger@p.iam.gserviceaccount.com"

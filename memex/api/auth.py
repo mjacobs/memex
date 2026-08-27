@@ -47,9 +47,12 @@ def verify_internal(request: Request) -> dict:
     token = _bearer_token(request)
     if token.count(".") != 2:  # device keys / junk are not JWTs; skip cert fetch
         raise ApiError(401, "unauthorized", "expected a Google-signed OIDC token")
-    allowed_audiences = {cfg.service_url}
+    allowed_audiences = {cfg.service_url, f"{cfg.service_url}{request.url.path}"}
     if request.url.hostname:
-        allowed_audiences.add(f"https://{request.url.hostname}")
+        # Pub/Sub (Eventarc) mints the token for the full push endpoint
+        # (host + path, no query); Scheduler uses the bare service URL.
+        base = f"https://{request.url.hostname}"
+        allowed_audiences.update({base, f"{base}{request.url.path}"})
     try:
         from google.auth.transport import requests as ga_requests
         from google.oauth2 import id_token as google_id_token
