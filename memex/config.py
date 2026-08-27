@@ -15,6 +15,20 @@ class Settings(BaseModel):
     # {"<device_id>": "<key>"}; prod loads from Secret Manager into this env
     device_keys: dict[str, str] = {}
     service_url: str = os.environ.get("MEMEX_SERVICE_URL", "")  # OIDC audience
+    # Service accounts allowed to call /internal/* (Eventarc trigger,
+    # Cloud Scheduler). Comma-separated env override.
+    internal_invokers: tuple[str, ...] = tuple(
+        v.strip()
+        for v in os.environ.get(
+            "MEMEX_INTERNAL_INVOKERS",
+            ",".join(
+                f"memex-{sa}@{os.environ.get('GOOGLE_CLOUD_PROJECT', 'm4tt-xyz')}"
+                ".iam.gserviceaccount.com"
+                for sa in ("trigger", "scheduler")
+            ),
+        ).split(",")
+        if v.strip()
+    )
 
 
 @lru_cache

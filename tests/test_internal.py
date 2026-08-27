@@ -112,3 +112,47 @@ def test_routine_tick_agent_unavailable_503(client, agent_missing, fs):
     r = client.post("/internal/routines/daily_review/tick")
     assert r.status_code == 503
     assert r.json()["error"]["code"] == "agent_unavailable"
+
+
+def test_internal_oidc_claims_checks(client, monkeypatch, agent_stub):
+    """Verified tokens must match an allowed audience AND an invoker SA."""
+    import memex.api.auth as auth_mod
+    import memex.config
+
+    cfg = memex.config.Settings(
+        service_url="https://memex-123.us-central1.run.app",
+        internal_invokers=("memex-trigger@p.iam.gserviceaccount.com",),
+    )
+    monkeypatch.setattr(auth_mod, "settings", lambda: cfg)
+
+    claims = {}
+
+    class FakeIdToken:
+        @staticmethod
+        def verify_oauth2_token(token, req, audience=None):
+            return dict(claims)
+
+    import google.oauth2.id_token as real
+
+    monkeypatch.setattr(real, "verify_oauth2_token", FakeIdToken.verify_oauth2_token)
+    jwt = "x.y.z"
+    hdr = {"Authorization": f"Bearer {jwt}"}
+    tick = "/internal/routines/daily_review/tick"
+
+    # wrong audience
+    claims.update(
+        aud="https://evil.example.com",
+        email="memex-trigger@p.iam.gserviceaccount.com",
+        email_verified=True,
+    )
+    assert client.post(tick, headers=hdr).status_code == 401
+
+    # right audience (legacy host form counts via request host), wrong caller
+    claims["aud"] = "https://testserver"
+    claims["email"] = "attacker@other.iam.gserviceaccount.com"
+    assert client.post(tick, headers=hdr).status_code == 401
+
+    # configured audience + allowed invoker passes auth
+    claims["aud"] = "https://memex-123.us-central1.run.app"
+    claims["email"] = "memex-trigger@p.iam.gserviceaccount.com"
+    assert client.post(tick, headers=hdr).status_code == 200
