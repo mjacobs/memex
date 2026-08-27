@@ -36,7 +36,7 @@ variable "vertex_location" {
 variable "time_zone" {
   type        = string
   description = "Time zone for the Cloud Scheduler routine jobs."
-  default     = "America/New_York"
+  default     = "America/Los_Angeles"
 }
 
 variable "audio_retention_days" {
