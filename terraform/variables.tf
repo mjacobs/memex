@@ -1,0 +1,46 @@
+variable "project" {
+  type        = string
+  description = "GCP project id."
+  default     = "m4tt-xyz"
+}
+
+variable "region" {
+  type        = string
+  description = "Region for Cloud Run, GCS, Eventarc, Scheduler, and Firestore."
+  default     = "us-central1"
+}
+
+variable "service_name" {
+  type        = string
+  description = "Cloud Run service name."
+  default     = "memex"
+}
+
+variable "image" {
+  type        = string
+  description = "Container image for the Cloud Run service (e.g. us-central1-docker.pkg.dev/m4tt-xyz/memex/memex:latest)."
+}
+
+variable "model" {
+  type        = string
+  description = "Gemini model id (MEMEX_MODEL)."
+  default     = "gemini-3.5-flash"
+}
+
+variable "vertex_location" {
+  type        = string
+  description = "Vertex location (MEMEX_VERTEX_LOCATION)."
+  default     = "global"
+}
+
+variable "time_zone" {
+  type        = string
+  description = "Time zone for the Cloud Scheduler routine jobs."
+  default     = "America/New_York"
+}
+
+variable "audio_retention_days" {
+  type        = number
+  description = "Days to keep raw audio objects in the capture bucket."
+  default     = 30
+}
