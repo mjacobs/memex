@@ -17,7 +17,7 @@ from google.cloud import storage
 
 from memex.agent import routines as routines_mod
 from memex.agent import tools
-from memex.agent.enrichment import enrich_audio, enrich_text
+from memex.agent.enrichment import enrich_audio, enrich_image, enrich_text
 from memex.config import settings
 from memex.ids import new_ulid
 from memex.models import Capture, Note, RoutineRun, Task, TraceEvent
@@ -32,6 +32,19 @@ def _download_gcs(gcs_uri: str) -> bytes:
     bucket_name, _, blob_name = gcs_uri.removeprefix("gs://").partition("/")
     client = storage.Client(project=settings().project)
     return client.bucket(bucket_name).blob(blob_name).download_as_bytes()
+
+
+def _image_note_body(capture: Capture, description: str) -> str:
+    """Markdown body for a screenshot note: what's in it, then provenance."""
+    parts = [description]
+    if capture.text:
+        parts.append(f"**Note:** {capture.text}")
+    if capture.source_url:
+        label = capture.title or capture.source_url
+        parts.append(f"Source: [{label}]({capture.source_url})")
+    elif capture.title:
+        parts.append(f"Source: {capture.title}")
+    return "\n\n".join(parts)
 
 
 def enrich_capture(capture_id: str) -> dict:
@@ -83,6 +96,30 @@ def enrich_capture(capture_id: str) -> dict:
                 )
             )
             result = enrich_audio(audio, mime)
+        elif capture.kind == "image":
+            if not capture.image_gcs_uri:
+                raise ValueError("image capture has no image_gcs_uri")
+            mime = capture.image_mime or "image/png"
+            image = _download_gcs(capture.image_gcs_uri)
+            trace.append(
+                TraceEvent(
+                    t=store.now(),
+                    role="user",
+                    text=(
+                        f"[image capture {capture.image_gcs_uri} "
+                        f"({mime}, {len(image)} bytes)]"
+                        + (f" caption: {capture.text}" if capture.text else "")
+                        + (f" from: {capture.source_url}" if capture.source_url else "")
+                    ),
+                )
+            )
+            result = enrich_image(
+                image,
+                mime,
+                caption=capture.text,
+                source_url=capture.source_url,
+                title=capture.title,
+            )
         else:
             if capture.text is None:
                 raise ValueError("text capture has no text")
@@ -105,7 +142,13 @@ def enrich_capture(capture_id: str) -> dict:
             kind="capture",
             capture_id=capture.id,
             transcript=result.transcript if capture.kind == "audio" else None,
-            body=capture.text if capture.kind == "text" else result.transcript,
+            body=(
+                capture.text
+                if capture.kind == "text"
+                else _image_note_body(capture, result.transcript)
+                if capture.kind == "image"
+                else result.transcript
+            ),
             summary=result.summary,
             tags=result.tags,
             trace=trace,
