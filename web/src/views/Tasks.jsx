@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, relativeTime } from "../api.js";
-import { Badge, ErrorBanner, Loading, Tags } from "../components.jsx";
+import { Badge, ErrorBanner, Loading, Tags, TagFilterBar } from "../components.jsx";
 
-function TaskRow({ task, onToggle, busy }) {
+function TaskRow({ task, onToggle, busy, selectedTags, onTagClick }) {
   const done = task.status === "done";
   return (
     <div className={`card task ${done ? "done" : ""}`}>
@@ -21,7 +21,7 @@ function TaskRow({ task, onToggle, busy }) {
         <div className="row">
           <span className="muted">created {relativeTime(task.created_at)}</span>
         </div>
-        <Tags tags={task.tags} />
+        <Tags tags={task.tags} selected={selectedTags} onTagClick={onTagClick} />
       </div>
     </div>
   );
@@ -32,6 +32,21 @@ export default function Tasks() {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [selectedTags, setSelectedTags] = useState(new Set());
+
+  const toggleTag = (tag) => {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
+  const visibleTasks =
+    tasks && selectedTags.size > 0
+      ? tasks.filter((t) => t.tags && [...selectedTags].every((tag) => t.tags.includes(tag)))
+      : tasks;
 
   const load = useCallback(() => {
     const statuses = showResolved ? ["open", "done", "dropped"] : ["open"];
@@ -71,13 +86,29 @@ export default function Tasks() {
         </button>
       </p>
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
+      <TagFilterBar
+        selected={selectedTags}
+        onRemove={toggleTag}
+        onClear={() => setSelectedTags(new Set())}
+      />
       {tasks === null ? (
         <Loading />
-      ) : tasks.length === 0 ? (
-        <p className="empty">No {showResolved ? "" : "open "}tasks.</p>
+      ) : visibleTasks.length === 0 ? (
+        <p className="empty">
+          {selectedTags.size > 0
+            ? "No tasks match this tag filter."
+            : `No ${showResolved ? "" : "open "}tasks.`}
+        </p>
       ) : (
-        tasks.map((t) => (
-          <TaskRow key={t.id} task={t} onToggle={toggle} busy={busyId === t.id} />
+        visibleTasks.map((t) => (
+          <TaskRow
+            key={t.id}
+            task={t}
+            onToggle={toggle}
+            busy={busyId === t.id}
+            selectedTags={selectedTags}
+            onTagClick={toggleTag}
+          />
         ))
       )}
     </div>

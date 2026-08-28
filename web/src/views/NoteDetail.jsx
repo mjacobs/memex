@@ -239,7 +239,7 @@ export default function NoteDetail({ id }) {
               </div>
             </div>
           ) : (
-            <Tags tags={note.tags} />
+            <Tags tags={note.tags} onTagClick={(t) => navigate(`?tags=${encodeURIComponent(t)}`)} />
           )}
 
           <LinkedTasks taskIds={note.task_ids} />
