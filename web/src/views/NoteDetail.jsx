@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, relativeTime } from "../api.js";
+import { api, fetchImageObjectUrl, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
 import { Badge, ErrorBanner, Loading, Markdown, Tags, Trace } from "../components.jsx";
 
@@ -61,8 +61,40 @@ function sameTags(a, b) {
   return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
+// The screenshot behind an image capture. Failing to load it is not worth an
+// error banner — the note text still stands on its own.
+function CaptureImage({ src }) {
+  const [objectUrl, setObjectUrl] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    let created = null;
+    fetchImageObjectUrl(src)
+      .then((url) => {
+        if (!alive) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        created = url;
+        setObjectUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [src]);
+
+  if (!objectUrl) return null;
+  return (
+    <div className="section">
+      <img className="note-image" src={objectUrl} alt="Captured screenshot" />
+    </div>
+  );
+}
+
 export default function NoteDetail({ id }) {
   const [note, setNote] = useState(null);
+  const [imageUrl, setImageUrl] = useState(null);
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -74,7 +106,11 @@ export default function NoteDetail({ id }) {
     let alive = true;
     api
       .getNote(id)
-      .then((d) => alive && setNote(d.note))
+      .then((d) => {
+        if (!alive) return;
+        setNote(d.note);
+        setImageUrl(d.image_url || null);
+      })
       .catch((e) => {
         if (!alive) return;
         // A task or run can link a note that has since been deleted.
@@ -177,6 +213,8 @@ export default function NoteDetail({ id }) {
               </div>
             )}
           </div>
+
+          {imageUrl && <CaptureImage src={imageUrl} />}
 
           {(editing || note.summary) && (
             <div className="section">

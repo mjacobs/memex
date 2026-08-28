@@ -62,6 +62,19 @@ async function request(path, { method = "GET", body, headers = {}, raw = false }
   return data;
 }
 
+// Image captures are served as bytes behind the device key, so an <img src>
+// can't load one directly — fetch it and hand back an object URL the caller
+// revokes when it unmounts.
+export async function fetchImageObjectUrl(path) {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${getKey()}` } });
+  if (res.status === 401) {
+    if (onUnauthorized) onUnauthorized();
+    throw new ApiError(401, "unauthorized", "invalid or missing device key");
+  }
+  if (!res.ok) throw new ApiError(res.status, "error", res.statusText);
+  return URL.createObjectURL(await res.blob());
+}
+
 export const api = {
   captureText: (text) =>
     request("/api/v1/capture", {

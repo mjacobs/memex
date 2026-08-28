@@ -406,6 +406,16 @@ a {
   margin-top: 12px;
 }
 
+/* The screenshot behind an image capture, framed like a card. */
+.note-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
 .body-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
