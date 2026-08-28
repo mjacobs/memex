@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 CaptureSource = Literal["ios", "desktop", "web", "api"]
-CaptureKind = Literal["text", "audio"]
+CaptureKind = Literal["text", "audio", "image"]
 CaptureStatus = Literal["pending", "processing", "enriched", "failed"]
 NoteKind = Literal["capture", "digest", "review"]
 TaskStatus = Literal["open", "done", "dropped"]
@@ -37,6 +37,11 @@ class Capture(BaseModel):
     text: str | None = None
     audio_gcs_uri: str | None = None
     audio_mime: str | None = None
+    image_gcs_uri: str | None = None
+    image_mime: str | None = None
+    # Provenance for kind=image: the page the screenshot was taken from.
+    source_url: str | None = None
+    title: str | None = None
     status: CaptureStatus
     processing_at: datetime | None = None  # set when an enrichment run claims it
     error: str | None = None

@@ -132,7 +132,19 @@ def fake_gcs(monkeypatch):
         )
         return f"gs://test-bucket/captures/{capture_id}.{ext}"
 
+    def upload_image(capture_id: str, ext: str, data: bytes, content_type: str) -> str:
+        uploads.append(
+            {
+                "capture_id": capture_id,
+                "ext": ext,
+                "data": data,
+                "content_type": content_type,
+            }
+        )
+        return f"gs://test-bucket/captures/{capture_id}.{ext}"
+
     import memex.api.gcs
 
     monkeypatch.setattr(memex.api.gcs, "upload_audio", upload_audio)
+    monkeypatch.setattr(memex.api.gcs, "upload_image", upload_image)
     return uploads

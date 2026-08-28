@@ -1,9 +1,12 @@
 """/api/v1 routes per docs/contracts.md. All Firestore access via the store."""
 
+import base64
+import binascii
 from typing import get_args
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from memex.api import gcs
@@ -34,6 +37,15 @@ AUDIO_EXTENSIONS = {
     "audio/ogg": "ogg",
     "audio/webm": "webm",
 }
+
+IMAGE_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 def _source(value: str | None) -> str:
@@ -133,12 +145,99 @@ async def capture_audio(
     return {"id": capture_id}
 
 
+class ImageCaptureIn(BaseModel):
+    """Screenshot push (Snippy). JSON rather than a raw body like audio: an
+    image capture carries metadata (caption, source page) that has to survive
+    non-ASCII, which HTTP headers can't carry safely."""
+
+    image_base64: str
+    mime: str
+    text: str | None = None  # caption / note typed alongside the screenshot
+    source_url: str | None = None
+    title: str | None = None
+    source: str | None = None
+
+
+@router.post("/capture/image", status_code=202)
+async def capture_image(
+    body: ImageCaptureIn, device_id: str = Depends(require_device)
+) -> dict:
+    mime = body.mime.split(";")[0].strip().lower()
+    ext = IMAGE_EXTENSIONS.get(mime)
+    if ext is None:
+        raise ApiError(
+            415,
+            "unsupported_media_type",
+            f"unsupported image content-type: {mime or '(none)'}",
+        )
+    # Cheap length gate before decoding, so an oversized payload can't cost a
+    # full base64 decode. 4 base64 chars per 3 bytes, plus padding slack.
+    if len(body.image_base64) > (MAX_IMAGE_BYTES // 3 + 1) * 4 + 4:
+        raise ApiError(413, "payload_too_large", "image exceeds 10 MiB")
+    try:
+        data = base64.b64decode(body.image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ApiError(400, "invalid_base64", "image_base64 is not valid base64") from exc
+    if not data:
+        raise ApiError(400, "empty_body", "image must be non-empty")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ApiError(413, "payload_too_large", "image exceeds 10 MiB")
+
+    capture_id = new_ulid()
+    # Capture doc first: the GCS finalize event races Eventarc against this
+    # write, and /internal/enrich 404s if the doc isn't there yet.
+    capture = Capture(
+        id=capture_id,
+        created_at=store.now(),
+        source=_source(body.source),
+        device_id=device_id,
+        kind="image",
+        text=(body.text.strip() or None) if body.text else None,
+        image_gcs_uri=gcs.image_uri(capture_id, ext),
+        image_mime=mime,
+        source_url=body.source_url or None,
+        title=body.title or None,
+        status="pending",
+    )
+    await anyio.to_thread.run_sync(store.put, capture)
+    try:
+        await anyio.to_thread.run_sync(gcs.upload_image, capture_id, ext, data, mime)
+    except Exception as exc:
+        store.update(Capture, capture_id, {"status": "failed", "error": str(exc)})
+        raise ApiError(502, "upload_failed", "image upload failed") from exc
+    return {"id": capture_id}
+
+
 @router.get("/captures/{capture_id}")
 def get_capture(capture_id: str) -> dict:
     capture = store.get(Capture, capture_id)
     if capture is None:
         raise ApiError(404, "not_found", f"capture {capture_id} not found")
     return {"capture": dump(capture)}
+
+
+@router.get("/captures/{capture_id}/image")
+async def get_capture_image(capture_id: str) -> Response:
+    """Serve the stored screenshot bytes.
+
+    Proxied rather than handed out as a signed URL: signing from Cloud Run
+    means an IAM SignBlob round trip per view (the runtime service account has
+    no private key), and the bucket stays private either way.
+    """
+    capture = store.get(Capture, capture_id)
+    if capture is None:
+        raise ApiError(404, "not_found", f"capture {capture_id} not found")
+    if capture.kind != "image" or not capture.image_gcs_uri:
+        raise ApiError(404, "not_found", f"capture {capture_id} has no image")
+    try:
+        data = await anyio.to_thread.run_sync(gcs.download, capture.image_gcs_uri)
+    except Exception as exc:
+        raise ApiError(502, "download_failed", "image download failed") from exc
+    return Response(
+        content=data,
+        media_type=capture.image_mime or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.get("/notes")
@@ -162,7 +261,14 @@ def get_note(note_id: str) -> dict:
     note = store.get(Note, note_id)
     if note is None:
         raise ApiError(404, "not_found", f"note {note_id} not found")
-    return {"note": dump(note)}
+    body: dict = {"note": dump(note)}
+    if note.capture_id:
+        capture = store.get(Capture, note.capture_id)
+        if capture and capture.kind == "image" and capture.image_gcs_uri:
+            # Same-origin, bearer-authenticated: the SPA fetches it and turns
+            # it into a blob URL (an <img src> can't carry the device key).
+            body["image_url"] = f"/api/v1/captures/{capture.id}/image"
+    return body
 
 
 class NotePatch(BaseModel):

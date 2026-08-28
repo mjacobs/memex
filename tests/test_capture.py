@@ -1,6 +1,16 @@
-"""Text and audio capture paths."""
+"""Text, audio, and image capture paths."""
+
+import base64
 
 from tests.conftest import AUTH
+
+PNG = b"\x89PNG\r\n\x1a\n-fake-image-bytes"
+
+
+def _image_body(**overrides) -> dict:
+    body = {"image_base64": base64.b64encode(PNG).decode(), "mime": "image/png"}
+    body.update(overrides)
+    return body
 
 
 def test_text_capture_happy_path(client, agent_stub):
@@ -85,6 +95,124 @@ def test_audio_capture_bad_content_type_415(client, fake_gcs):
     assert r.status_code == 415
     assert r.json()["error"]["code"] == "unsupported_media_type"
     assert fake_gcs == []
+
+
+def test_image_capture_202_and_gcs_write(client, fake_gcs):
+    r = client.post(
+        "/api/v1/capture/image",
+        json=_image_body(
+            text="pricing table to compare later",
+            source_url="https://example.com/pricing",
+            title="Example — Pricing",
+            source="web",
+        ),
+        headers=AUTH,
+    )
+    assert r.status_code == 202
+    capture_id = r.json()["id"]
+    assert fake_gcs == [
+        {
+            "capture_id": capture_id,
+            "ext": "png",
+            "data": PNG,
+            "content_type": "image/png",
+        }
+    ]
+
+    cap = client.get(f"/api/v1/captures/{capture_id}", headers=AUTH).json()["capture"]
+    assert cap["kind"] == "image"
+    assert cap["status"] == "pending"
+    assert cap["source"] == "web"
+    assert cap["image_gcs_uri"] == f"gs://test-bucket/captures/{capture_id}.png"
+    assert cap["image_mime"] == "image/png"
+    assert cap["text"] == "pricing table to compare later"
+    assert cap["source_url"] == "https://example.com/pricing"
+    assert cap["title"] == "Example — Pricing"
+
+
+def test_image_capture_ext_mapping(client, fake_gcs):
+    for mime, ext in [
+        ("image/png", "png"),
+        ("image/jpeg", "jpg"),
+        ("image/webp", "webp"),
+        ("image/gif", "gif"),
+    ]:
+        r = client.post(
+            "/api/v1/capture/image", json=_image_body(mime=mime), headers=AUTH
+        )
+        assert r.status_code == 202, mime
+        assert fake_gcs[-1]["ext"] == ext
+
+
+def test_image_capture_requires_auth(client, fake_gcs):
+    r = client.post("/api/v1/capture/image", json=_image_body())
+    assert r.status_code == 401
+    assert fake_gcs == []
+
+
+def test_image_capture_bad_mime_415(client, fake_gcs):
+    r = client.post(
+        "/api/v1/capture/image", json=_image_body(mime="application/pdf"), headers=AUTH
+    )
+    assert r.status_code == 415
+    assert r.json()["error"]["code"] == "unsupported_media_type"
+    assert fake_gcs == []
+
+
+def test_image_capture_bad_base64_400(client, fake_gcs):
+    r = client.post(
+        "/api/v1/capture/image",
+        json={"image_base64": "not base64!!", "mime": "image/png"},
+        headers=AUTH,
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_base64"
+    assert fake_gcs == []
+
+
+def test_image_capture_empty_400(client, fake_gcs):
+    r = client.post(
+        "/api/v1/capture/image",
+        json={"image_base64": "", "mime": "image/png"},
+        headers=AUTH,
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "empty_body"
+    assert fake_gcs == []
+
+
+def test_image_capture_too_large_413(client, fake_gcs):
+    oversized = base64.b64encode(b"x" * (10 * 1024 * 1024 + 1)).decode()
+    r = client.post(
+        "/api/v1/capture/image",
+        json={"image_base64": oversized, "mime": "image/png"},
+        headers=AUTH,
+    )
+    assert r.status_code == 413
+    assert r.json()["error"]["code"] == "payload_too_large"
+    assert fake_gcs == []
+
+
+def test_capture_image_bytes_served_back(client, fake_gcs, monkeypatch):
+    capture_id = client.post(
+        "/api/v1/capture/image", json=_image_body(), headers=AUTH
+    ).json()["id"]
+
+    import memex.api.gcs
+
+    monkeypatch.setattr(memex.api.gcs, "download", lambda uri: PNG)
+    r = client.get(f"/api/v1/captures/{capture_id}/image", headers=AUTH)
+    assert r.status_code == 200
+    assert r.content == PNG
+    assert r.headers["content-type"] == "image/png"
+
+
+def test_capture_image_bytes_404_for_non_image(client, agent_stub):
+    capture_id = client.post(
+        "/api/v1/capture", json={"text": "hi"}, headers=AUTH
+    ).json()["capture"]["id"]
+    r = client.get(f"/api/v1/captures/{capture_id}/image", headers=AUTH)
+    assert r.status_code == 404
 
 
 def test_get_capture_404(client):

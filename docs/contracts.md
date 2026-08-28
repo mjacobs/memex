@@ -55,11 +55,15 @@ Raw inbound payloads; immutable except `status`/enrichment linkage.
 | `created_at`    | timestamp                                  |                                          |
 | `source`        | `"ios" \| "desktop" \| "web" \| "api"`     | free-form fallback `"api"`               |
 | `device_id`     | string                                     | from the bearer key that authenticated   |
-| `kind`          | `"text" \| "audio"`                        |                                          |
-| `text?`         | string                                     | kind=text                                |
+| `kind`          | `"text" \| "audio" \| "image"`             |                                          |
+| `text?`         | string                                     | kind=text; kind=image → optional caption |
 | `audio_gcs_uri?`| string                                     | kind=audio, `gs://…`                     |
 | `audio_mime?`   | string                                     | e.g. `audio/mp4`, `audio/wav`            |
-| `status`        | `"pending" \| "processing" \| "enriched" \| "failed"` | audio starts `pending`        |
+| `image_gcs_uri?`| string                                     | kind=image, `gs://…` (same bucket/prefix as audio) |
+| `image_mime?`   | string                                     | e.g. `image/png`, `image/jpeg`           |
+| `source_url?`   | string                                     | kind=image, page the screenshot came from |
+| `title?`        | string                                     | kind=image, page title                   |
+| `status`        | `"pending" \| "processing" \| "enriched" \| "failed"` | audio/image start `pending`   |
 | `error?`        | string                                     | status=failed                            |
 | `note_id?`      | ulid                                       | set when enrichment lands                |
 
@@ -75,7 +79,7 @@ The feed. Both enriched captures and routine output.
 | `capture_id?`    | ulid                                        | kind=capture                            |
 | `routine_run_id?`| ulid                                        | kind=digest/review                      |
 | `transcript?`    | string                                      | audio captures                          |
-| `body`           | string                                      | canonical text (original text, transcript, or routine markdown) |
+| `body`           | string                                      | canonical text (original text, transcript, image description + caption + source link, or routine markdown) |
 | `summary`        | string                                      |                                         |
 | `tags`           | string[]                                    | lowercase kebab                         |
 | `task_ids`       | ulid[]                                      | tasks extracted from this note          |
@@ -158,9 +162,11 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | ------------------------------------ | -------------------------------------------------- | ------------------------------------------ |
 | `POST /api/v1/capture`               | `{"text": "...", "source?": "..."}`                | `201 {capture, note, tasks}` — sync enrich |
 | `POST /api/v1/capture/audio`         | raw audio body; `Content-Type: audio/*`; `X-Memex-Source?` | `202 {"id": "<capture_id>"}` — GCS upload only |
-| `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio status)    |
+| `POST /api/v1/capture/image`         | `{"image_base64", "mime", "text?", "source_url?", "title?", "source?"}` | `202 {"id": "<capture_id>"}` — GCS upload only, max 10 MiB |
+| `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio/image status) |
+| `GET /api/v1/captures/{id}/image`    | kind=image only                                    | `200` raw image bytes (`Content-Type` = `image_mime`) |
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |
-| `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`                 |
+| `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`; plus `image_url` for image captures |
 | `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event |
 | `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete      |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |
