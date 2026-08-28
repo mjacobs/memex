@@ -134,6 +134,12 @@ export default function Feed({ pendingCaptures, refreshToken }) {
           <NoteCard key={n.id} note={n} selectedTags={selectedTags} onTagClick={toggleTag} />
         ))
       )}
+      {partial && notes && notes.length > 0 && (
+        <p className="empty">
+          Showing matches from the last {PAGE * MAX_PAGES} notes tagged #
+          {tagKey.split(",")[0]}.
+        </p>
+      )}
     </div>
   );
 }

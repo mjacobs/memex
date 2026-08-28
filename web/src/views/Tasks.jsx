@@ -27,11 +27,16 @@ function TaskRow({ task, onToggle, busy, selectedTags, onTagClick }) {
   );
 }
 
+// What GET /tasks returns per status. A list this long may have been cut off,
+// and tag filtering happens here, so a "no matches" has to admit its reach.
+const TASK_PAGE = 200;
+
 export default function Tasks() {
   const [showResolved, setShowResolved] = useState(false);
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [partial, setPartial] = useState(false);
   const [selectedTags, setSelectedTags] = useState(new Set());
 
   const toggleTag = (tag) => {
@@ -51,7 +56,10 @@ export default function Tasks() {
   const load = useCallback(() => {
     const statuses = showResolved ? ["open", "done", "dropped"] : ["open"];
     Promise.all(statuses.map((s) => api.listTasks(s)))
-      .then((results) => setTasks(results.flatMap((r) => r.tasks)))
+      .then((results) => {
+        setTasks(results.flatMap((r) => r.tasks));
+        setPartial(results.some((r) => r.tasks.length >= TASK_PAGE));
+      })
       .catch((e) => setError(e.message));
   }, [showResolved]);
 
@@ -95,9 +103,11 @@ export default function Tasks() {
         <Loading />
       ) : visibleTasks.length === 0 ? (
         <p className="empty">
-          {selectedTags.size > 0
-            ? "No tasks match this tag filter."
-            : `No ${showResolved ? "" : "open "}tasks.`}
+          {selectedTags.size === 0
+            ? `No ${showResolved ? "" : "open "}tasks.`
+            : partial
+              ? `No tasks with these tags among the ${TASK_PAGE} most recent per status.`
+              : "No tasks match this tag filter."}
         </p>
       ) : (
         visibleTasks.map((t) => (
@@ -110,6 +120,11 @@ export default function Tasks() {
             onTagClick={toggleTag}
           />
         ))
+      )}
+      {partial && selectedTags.size > 0 && visibleTasks && visibleTasks.length > 0 && (
+        <p className="empty">
+          Showing matches among the {TASK_PAGE} most recent tasks per status.
+        </p>
       )}
     </div>
   );
