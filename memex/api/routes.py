@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import re
 from typing import Any, get_args
 from urllib.parse import urlparse
 
@@ -176,6 +177,28 @@ def _optional_url(url: str | None) -> str | None:
     or file: URL just gets dropped rather than costing the user the capture.
     """
     return _http_url(url)
+
+
+_TAG_SPLIT = re.compile(r",+")
+_TAG_STRIP = re.compile(r"[^a-z0-9-]+")
+
+
+def _clean_tags(tags: list[str]) -> list[str]:
+    """Normalize to the lowercase-kebab tags the contract promises.
+
+    A tag is also a filter URL segment, and the reader splits that on commas
+    — so a tag stored as "foo,bar" could never match itself. Rather than
+    reject it, it becomes the two tags it plainly means. Everything else
+    outside lowercase kebab becomes a hyphen, so "Read Later" is the
+    "read-later" it was going to be anyway. Duplicates and empties drop.
+    """
+    out: list[str] = []
+    for raw in tags:
+        for piece in _TAG_SPLIT.split(str(raw).strip().lower()):
+            tag = _TAG_STRIP.sub("-", piece).strip("-")
+            if tag and tag not in out:
+                out.append(tag)
+    return out
 
 
 def _truncate(value: str | None, limit: int) -> str | None:
@@ -452,7 +475,7 @@ def patch_note(note_id: str, body: NotePatch) -> dict:
         if value is None:
             raise ApiError(400, "invalid_patch", f"{field} cannot be null")
     if "tags" in updates:
-        updates["tags"] = [t.strip() for t in updates["tags"] if t.strip()]
+        updates["tags"] = _clean_tags(updates["tags"])
     changed = [f for f in ("summary", "body", "tags") if f in updates]
     if not changed:
         raise ApiError(400, "empty_update", "no updatable fields given")
@@ -526,6 +549,8 @@ def _apply_task_changes(task_id: str, changes: dict) -> Task:
             raise ApiError(400, "invalid_patch", f"{field} cannot be null")
     if not updates:
         raise ApiError(400, "empty_update", "no updatable fields given")
+    if "tags" in updates:
+        updates["tags"] = _clean_tags(updates["tags"])
     updates["updated_at"] = store.now()
     store.update(Task, task_id, updates)
     updated = store.get(Task, task_id)

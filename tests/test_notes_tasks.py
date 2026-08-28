@@ -92,6 +92,19 @@ def test_patch_note_updates_fields_and_traces_the_edit(client, fs):
     assert patched["trace"][0]["role"] == "model"
 
 
+def test_patch_note_normalizes_tags(client, fs):
+    """A tag is also a filter URL segment: one that carries a comma or a
+    capital could never match itself, so it is normalized on the way in."""
+    note = _make_note(0, tags=["old"])
+    r = client.patch(
+        f"/api/v1/notes/{note.id}",
+        json={"tags": ["Home , errands", "read later", "home", "  "]},
+        headers=AUTH,
+    )
+    assert r.status_code == 200
+    assert r.json()["note"]["tags"] == ["home", "errands", "read-later"]
+
+
 def test_patch_note_body_only_trace_text(client, fs):
     note = _make_note(0)
     r = client.patch(
