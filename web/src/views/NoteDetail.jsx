@@ -251,10 +251,12 @@ export default function NoteDetail({ id }) {
                   value={draft.body}
                   onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                 />
-              ) : note.kind === "capture" ? (
-                // A capture body is what you said or typed. Show it verbatim —
-                // markdown rendering would eat a leading "#" or "-" and hide
-                // anything that looks like a tag.
+              ) : note.kind === "capture" && !imageUrl ? (
+                // A typed or spoken capture body is your own words verbatim,
+                // so it stays plain: markdown would turn a leading "#" into a
+                // heading and swallow anything angle-bracketed. Screenshot,
+                // link, digest, and review bodies are markdown the app or a
+                // routine composed, and do get rendered.
                 <p className="body-text">{note.body}</p>
               ) : (
                 <Markdown text={note.body} />
