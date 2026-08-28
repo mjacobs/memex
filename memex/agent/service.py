@@ -179,6 +179,13 @@ def enrich_capture(capture_id: str) -> dict:
                     t=store.now(),
                     role="user",
                     text=f"[link capture {capture.url} ({capture.title or 'untitled'})]",
+                    # The user's note is what a task off this link may be
+                    # derived from, so it has to be in the trace to audit.
+                    args={
+                        "url": capture.url,
+                        "title": capture.title,
+                        "note": capture.text,
+                    },
                 )
             )
             result = enrich_link(capture.url, capture.title, capture.text)
@@ -219,10 +226,18 @@ def enrich_capture(capture_id: str) -> dict:
         )
         store.put(note)
 
+        action_items = result.action_items
+        if capture.kind == "link" and not (capture.text or "").strip():
+            # A saved link is a URL and a title the site chose. Nothing there
+            # is the user asking for anything, so a task out of a bare link
+            # can only have come from the page talking to the model. The link
+            # prompt already says this; enforcing it here makes it true.
+            action_items = []
+
         task_ids: list[str] = []
-        if result.action_items:
+        if action_items:
             created = tools.create_tasks(
-                [item.model_dump(mode="json", exclude_none=True) for item in result.action_items],
+                [item.model_dump(mode="json", exclude_none=True) for item in action_items],
                 source_note_id=note.id,
             )
             task_ids = created["task_ids"]

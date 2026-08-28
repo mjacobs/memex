@@ -196,7 +196,9 @@ server never fetches a client-supplied URL. The note body's first line is a
 markdown link to the page, and `read-later` is always among its tags. In the
 batch form each link succeeds or fails independently: a rejected URL or a
 failed enrichment is reported in that link's own result, and the request still
-returns `201`.
+returns `201`. A link saved without a user note produces no tasks: only the
+user's own words can ask for one, since a URL and a page title are text the
+site chose.
 
 Entity JSON in responses mirrors the Firestore schema (timestamps as ISO
 strings, `trace` only on detail endpoints).

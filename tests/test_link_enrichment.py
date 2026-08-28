@@ -134,6 +134,35 @@ def test_action_items_from_the_users_note_still_become_tasks(fs, canned):
     assert note is not None and note.task_ids == [out["tasks"][0]["id"]]
 
 
+def test_a_bare_link_produces_no_tasks(fs, canned):
+    """A URL and the title the site chose are not the user asking for
+    anything. Without a note of their own, an action item could only have
+    come from the page, so none is kept."""
+    cap = _link_capture()  # no user note
+    from memex.agent import service
+
+    out = service.enrich_capture(cap.id)
+
+    assert out["tasks"] == []
+    note = store.get(Note, out["note"]["id"])
+    assert note is not None and note.task_ids == []
+
+
+def test_link_trace_records_the_note_a_task_came_from(fs, canned):
+    from memex.agent import service
+
+    cap = _link_capture(title="A post", text="reply to the author")
+    out = service.enrich_capture(cap.id)
+
+    note = store.get(Note, out["note"]["id"])
+    assert note is not None
+    assert note.trace[0].args == {
+        "url": "https://example.com/post",
+        "title": "A post",
+        "note": "reply to the author",
+    }
+
+
 def test_link_capture_without_a_url_fails_cleanly(fs, canned):
     from memex.agent import service
 
