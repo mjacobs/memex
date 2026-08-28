@@ -13,6 +13,11 @@ output "audio_bucket" {
   value       = google_storage_bucket.audio.name
 }
 
+output "images_bucket" {
+  description = "GCS bucket for screenshot captures (no expiry)."
+  value       = google_storage_bucket.images.name
+}
+
 output "artifact_repo" {
   description = "Artifact Registry docker repo path for image pushes."
   value       = "${var.region}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.docker.repository_id}"

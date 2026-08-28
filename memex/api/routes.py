@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import logging
 from typing import Any, get_args
 from urllib.parse import urlparse
 
@@ -28,6 +29,8 @@ from memex.models import (
     clean_tags,
 )
 from memex.store import firestore as store
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_device)])
 
@@ -482,12 +485,23 @@ def patch_note(note_id: str, body: NotePatch) -> dict:
 
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: str) -> dict:
-    """Hard-delete. Tasks spawned from the note and the originating capture
-    survive with a dangling id — deleting a note is not a retraction of the
-    work it produced, and readers tolerate a missing note."""
+    """Hard-delete the note and its originating capture, blob included — for
+    an image note the screenshot is the content, so "delete" reclaims the
+    bytes (contracts.md). Tasks spawned from the note survive with a dangling
+    id — deleting a note is not a retraction of the work it produced."""
     note = store.get(Note, note_id)
     if note is None:
         raise ApiError(404, "not_found", f"note {note_id} not found")
+    if note.capture_id and (capture := store.get(Capture, note.capture_id)):
+        for uri in (capture.image_gcs_uri, capture.audio_gcs_uri):
+            if uri:
+                try:
+                    gcs.delete(uri)
+                except Exception:
+                    # Reclaiming bytes is best-effort; the note delete the
+                    # user asked for must not fail on a storage hiccup.
+                    logger.warning("blob delete failed for %s", uri, exc_info=True)
+        store.delete(Capture, note.capture_id)
     store.delete(Note, note_id)
     return {"deleted": note_id}
 

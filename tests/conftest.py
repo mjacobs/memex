@@ -152,3 +152,14 @@ def fake_gcs(monkeypatch):
     monkeypatch.setattr(memex.api.gcs, "upload_audio", upload_audio)
     monkeypatch.setattr(memex.api.gcs, "upload_image", upload_image)
     return uploads
+
+
+@pytest.fixture
+def fake_gcs_deletes(monkeypatch):
+    """Record gs:// URIs passed to gcs.delete instead of talking to GCS."""
+    deleted: list[str] = []
+
+    import memex.api.gcs
+
+    monkeypatch.setattr(memex.api.gcs, "delete", deleted.append)
+    return deleted

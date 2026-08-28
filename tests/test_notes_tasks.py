@@ -1,7 +1,7 @@
 """Notes and tasks listing, pagination, and task patching."""
 
 from memex.ids import new_ulid
-from memex.models import Note, Task
+from memex.models import Capture, Note, Task
 from memex.store import firestore as store
 from tests.conftest import AUTH
 
@@ -143,7 +143,7 @@ def test_patch_note_404_empty_and_unknown_fields(client, fs):
     assert len(unchanged["trace"]) == 1
 
 
-def test_delete_note_leaves_tasks_and_capture_alone(client, fs, agent_stub):
+def test_delete_note_cascades_to_capture_not_tasks(client, fs, agent_stub, fake_gcs_deletes):
     r = client.post("/api/v1/capture", json={"text": "buy milk"}, headers=AUTH)
     assert r.status_code == 201
     note_id = r.json()["note"]["id"]
@@ -158,12 +158,36 @@ def test_delete_note_leaves_tasks_and_capture_alone(client, fs, agent_stub):
     assert client.delete(f"/api/v1/notes/{note_id}", headers=AUTH).status_code == 404
     assert note_id not in [n["id"] for n in client.get("/api/v1/notes", headers=AUTH).json()["notes"]]
 
-    # the spawned task and the originating capture survive, dangling ref and all
+    # the originating capture goes with the note (contracts.md); a text
+    # capture has no blob so nothing reaches GCS
+    assert client.get(f"/api/v1/captures/{capture_id}", headers=AUTH).status_code == 404
+    assert fake_gcs_deletes == []
+
+    # the spawned task survives, dangling ref and all
     tasks = client.get("/api/v1/tasks", headers=AUTH).json()["tasks"]
     task = next(t for t in tasks if t["id"] == task_id)
     assert task["source_note_id"] == note_id
-    capture = client.get(f"/api/v1/captures/{capture_id}", headers=AUTH).json()["capture"]
-    assert capture["note_id"] == note_id
+
+
+def test_delete_image_note_reclaims_blob(client, fs, fake_gcs_deletes):
+    capture = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        device_id="dev",
+        kind="image",
+        image_gcs_uri="gs://test-bucket/captures/img.png",
+        image_mime="image/png",
+        status="enriched",
+    )
+    store.put(capture)
+    note = _make_note(0)
+    store.update(Note, note.id, {"capture_id": capture.id})
+    store.update(Capture, capture.id, {"note_id": note.id})
+
+    d = client.delete(f"/api/v1/notes/{note.id}", headers=AUTH)
+    assert d.status_code == 200
+    assert fake_gcs_deletes == ["gs://test-bucket/captures/img.png"]
+    assert client.get(f"/api/v1/captures/{capture.id}", headers=AUTH).status_code == 404
 
 
 def test_note_edit_and_delete_require_auth(client, fs):

@@ -65,6 +65,11 @@ resource "google_cloud_run_v2_service" "app" {
         value = google_storage_bucket.audio.name
       }
 
+      env {
+        name  = "MEMEX_IMAGES_BUCKET"
+        value = google_storage_bucket.images.name
+      }
+
       # OIDC audience for /internal/* verification (deterministic URL,
       # see main.tf).
       env {
@@ -97,6 +102,7 @@ resource "google_cloud_run_v2_service" "app" {
     google_project_iam_member.run_datastore,
     google_project_iam_member.run_aiplatform,
     google_storage_bucket_iam_member.run_audio_object_admin,
+    google_storage_bucket_iam_member.run_images_object_admin,
     google_secret_manager_secret_iam_member.run_device_keys,
   ]
 

@@ -1,7 +1,8 @@
-# Capture blob bucket (audio and screenshots). Objects land at
-# captures/<capture_id>.<ext>; the GCS finalize event drives the
-# Eventarc -> /internal/enrich path, and that trigger is scoped to the one
-# prefix, which is why images share the bucket.
+# Capture blob buckets. Objects land at captures/<capture_id>.<ext>; each
+# bucket's GCS finalize event drives its own Eventarc -> /internal/enrich
+# trigger. Audio and images are siblings so retention is a bucket-level
+# policy instead of a suffix-matching rule that has to stay in sync with
+# the code's extension tables.
 resource "google_storage_bucket" "audio" {
   name     = "${var.project}-${var.service_name}-audio"
   project  = var.project
@@ -11,10 +12,9 @@ resource "google_storage_bucket" "audio" {
   force_destroy               = true
 
   # Raw audio is transient input: the transcript outlives the recording, so
-  # the file goes after var.audio_retention_days. A screenshot is the
-  # opposite — it is the note's content, and the note detail view loads it
-  # back on every visit — so the rule matches audio suffixes only rather
-  # than every object in the bucket.
+  # the file goes after var.audio_retention_days. The suffix match protects
+  # legacy screenshots uploaded here before the images bucket existed — a
+  # screenshot is the note's content and must never age out.
   lifecycle_rule {
     condition {
       age            = var.audio_retention_days
@@ -24,6 +24,19 @@ resource "google_storage_bucket" "audio" {
       type = "Delete"
     }
   }
+
+  depends_on = [google_project_service.enabled]
+}
+
+# Screenshots are the note's content: no lifecycle rule, objects live until
+# their note is deleted (the API cascades the delete).
+resource "google_storage_bucket" "images" {
+  name     = "${var.project}-${var.service_name}-images"
+  project  = var.project
+  location = var.region
+
+  uniform_bucket_level_access = true
+  force_destroy               = true
 
   depends_on = [google_project_service.enabled]
 }

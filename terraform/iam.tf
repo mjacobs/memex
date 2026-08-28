@@ -35,9 +35,15 @@ resource "google_project_iam_member" "run_aiplatform" {
   member  = "serviceAccount:${google_service_account.run.email}"
 }
 
-# Bucket-scoped, not project-wide: the app only touches the audio bucket.
+# Bucket-scoped, not project-wide: the app only touches the capture buckets.
 resource "google_storage_bucket_iam_member" "run_audio_object_admin" {
   bucket = google_storage_bucket.audio.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.run.email}"
+}
+
+resource "google_storage_bucket_iam_member" "run_images_object_admin" {
+  bucket = google_storage_bucket.images.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.run.email}"
 }

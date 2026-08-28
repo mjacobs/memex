@@ -22,6 +22,9 @@ class Settings(BaseModel):
     # Transcription-heavy audio enrichment rides the cheaper/faster lite tier.
     transcribe_model: str = _env("MEMEX_TRANSCRIBE_MODEL", "gemini-3.5-flash-lite")
     audio_bucket: str = _env("MEMEX_AUDIO_BUCKET")
+    # Empty means "use audio_bucket" (see gcs.py) so code can deploy ahead of
+    # the terraform that creates the sibling bucket.
+    images_bucket: str = _env("MEMEX_IMAGES_BUCKET")
     # {"<device_id>": "<key>"}; prod loads from Secret Manager into this env
     device_keys: dict[str, str] = {}
     service_url: str = _env("MEMEX_SERVICE_URL")  # OIDC audience
