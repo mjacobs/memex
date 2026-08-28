@@ -188,6 +188,35 @@ a {
   padding: 40px 0;
 }
 
+/* ---- run errors ---- */
+.run-error {
+  background: var(--red-soft);
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-error-preview {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--red);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.error-link {
+  color: inherit;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -259,11 +288,57 @@ a {
   border-radius: 999px;
 }
 
+.tag-clickable {
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.tag-clickable:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tag-active {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.tag-active:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
 .tags {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 8px;
+}
+
+/* ---- tag filter bar ---- */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.tag-filter-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tag-filter-clear {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+  cursor: pointer;
 }
 
 /* ---- feed ---- */

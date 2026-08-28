@@ -34,17 +34,71 @@ export function Badge({ value }) {
   return <span className={`badge ${value}`}>{value}</span>;
 }
 
-export function Tags({ tags }) {
+/** tags: string[]. onTagClick(tag): optional, makes chips clickable/toggleable.
+ * selected: optional Set/array of tags to render with an active style. */
+export function Tags({ tags, onTagClick, selected }) {
   if (!tags || tags.length === 0) return null;
+  const selectedSet = selected instanceof Set ? selected : new Set(selected || []);
   return (
     <div className="tags">
       {tags.map((t) => (
-        <span key={t} className="tag">
+        <span
+          key={t}
+          className={`tag ${onTagClick ? "tag-clickable" : ""} ${selectedSet.has(t) ? "tag-active" : ""}`}
+          onClick={
+            onTagClick &&
+            ((e) => {
+              e.stopPropagation();
+              onTagClick(t);
+            })
+          }
+        >
           #{t}
         </span>
       ))}
     </div>
   );
+}
+
+const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
+
+function shortenUrl(url) {
+  try {
+    const u = new URL(url);
+    return `${u.host}…`;
+  } catch {
+    return url.length > 40 ? `${url.slice(0, 40)}…` : url;
+  }
+}
+
+/** Split text on bare http(s) URLs and render them as truncated, clickable links.
+ * Returns an array of strings/elements suitable as React children — no HTML injection. */
+export function linkifyText(text) {
+  if (!text) return text;
+  const parts = String(text).split(URL_RE);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="error-link"
+          title={part}
+        >
+          {shortenUrl(part)}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
+/** Formatted routine-run error: monospace, wrapped, with linkified URLs. */
+export function ErrorBlock({ text }) {
+  if (!text) return null;
+  return <pre className="run-error">{linkifyText(text)}</pre>;
 }
 
 function Json({ value }) {
@@ -98,6 +152,25 @@ export function Trace({ trace }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Active tag filter chips + a "clear" affordance. selected: Set<string>. onRemove(tag), onClear(). */
+export function TagFilterBar({ selected, onRemove, onClear }) {
+  const tags = selected instanceof Set ? [...selected] : selected || [];
+  if (tags.length === 0) return null;
+  return (
+    <div className="tag-filter-bar">
+      <span className="tag-filter-label">filtering by:</span>
+      {tags.map((t) => (
+        <span key={t} className="tag tag-clickable tag-active" onClick={() => onRemove(t)}>
+          #{t} ×
+        </span>
+      ))}
+      <button className="tag-filter-clear" onClick={onClear}>
+        clear
+      </button>
     </div>
   );
 }

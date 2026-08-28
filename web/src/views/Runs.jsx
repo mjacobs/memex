@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
-import { Badge, ErrorBanner, Loading, Markdown, Trace } from "../components.jsx";
+import { Badge, ErrorBanner, ErrorBlock, Loading, Markdown, Trace } from "../components.jsx";
 
 const ROUTINE_LABELS = {
   daily_review: "Daily review",
@@ -42,7 +42,7 @@ export function RunList() {
               <span className="muted">{relativeTime(r.fired_at)}</span>
             </div>
             {r.summary && <p className="note-summary">{r.summary}</p>}
-            {r.error && <p className="note-summary" style={{ color: "var(--red)" }}>{r.error}</p>}
+            {r.error && <p className="run-error-preview">{r.error}</p>}
           </div>
         ))
       )}
@@ -91,7 +91,7 @@ export function RunDetail({ id }) {
           {run.error && (
             <div className="section">
               <h3>Error</h3>
-              <p className="body-text" style={{ color: "var(--red)" }}>{run.error}</p>
+              <ErrorBlock text={run.error} />
             </div>
           )}
           {run.note_id && (
