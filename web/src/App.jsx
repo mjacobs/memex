@@ -65,7 +65,10 @@ export default function App() {
 
   const [section, id] = route;
   let view;
-  if (section === "notes" && id) view = <NoteDetail id={id} />;
+  // Keyed by id: a citation link inside a digest jumps note -> note, and the
+  // draft, delete confirmation, and image of the note you left must not
+  // survive into the note you arrived at.
+  if (section === "notes" && id) view = <NoteDetail key={id} id={id} />;
   else if (section === "tasks") view = <Tasks />;
   else if (section === "approvals") view = <Approvals />;
   else if (section === "runs" && id) view = <RunDetail id={id} />;
