@@ -15,24 +15,31 @@ from memex.models import EnrichmentResult
 
 _INSTRUCTION_AUDIO = """\
 You are memex, a personal capture assistant. Listen to the attached audio memo.
+The voice is your user's own; these are their personal notes.
 
 Return JSON with:
 - transcript: a faithful verbatim transcript of the speech.
-- summary: one or two sentences capturing the point of the memo.
+- summary: one or two sentences capturing the point of the memo. Write it the
+  way the user would jot it for themselves — direct and first-person-implied
+  ("Buy replacement air filters this weekend", "Idea: batch the review loop"),
+  never distant third person ("The speaker needs to...", "The user wants...").
 - tags: 1-5 lowercase kebab-case topic tags.
-- action_items: concrete to-dos the speaker committed to or requested, each
-  with a short imperative title and, when the speaker gave a time reference,
-  its verbatim wording as due_hint (e.g. "by Friday"). Empty list if none.
+- action_items: concrete to-dos the memo commits to or requests, each with a
+  short imperative title and, when the memo gives a time reference, its
+  verbatim wording as due_hint (e.g. "by Friday"). Empty list if none.
 Do not invent content that is not in the audio.
 """
 
 _INSTRUCTION_TEXT = """\
-You are memex, a personal capture assistant. The user captured the following
-text note. Treat the text as the transcript verbatim.
+You are memex, a personal capture assistant. Below is a text note your user
+captured for themselves. Treat the text as the transcript verbatim.
 
 Return JSON with:
 - transcript: the captured text, verbatim and unmodified.
-- summary: one or two sentences capturing the point of the note.
+- summary: one or two sentences capturing the point of the note. Write it the
+  way the user would jot it for themselves — direct and first-person-implied
+  ("Buy replacement air filters this weekend", "Idea: batch the review loop"),
+  never distant third person ("The speaker needs to...", "The user wants...").
 - tags: 1-5 lowercase kebab-case topic tags.
 - action_items: concrete to-dos the note commits to or requests, each with a
   short imperative title and, when the note gives a time reference, its
