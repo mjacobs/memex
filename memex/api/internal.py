@@ -53,6 +53,11 @@ async def enrich(request: Request) -> dict:
         # Non-2xx so Eventarc redelivers transient failures instead of
         # acking them (retention caps the retries).
         raise ApiError(502, "enrichment_failed", result["error"])
+    if result.get("in_progress"):
+        # Don't ack while another run holds the claim: if that worker dies,
+        # this redelivery is the only thing that will ever retry the capture
+        # (the claim expires after 30 minutes).
+        raise ApiError(503, "in_progress", "enrichment already in progress")
     return result
 
 

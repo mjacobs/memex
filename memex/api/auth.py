@@ -5,6 +5,7 @@
   (verification skipped when service_url is empty — local dev).
 """
 
+import functools
 import hmac
 import logging
 
@@ -14,6 +15,19 @@ from memex.api.common import ApiError
 from memex.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache
+def _cert_transport():
+    """Shared HTTP transport with response caching for Google's signing certs,
+    so unauthenticated junk tokens don't trigger a cert fetch per request."""
+    import cachecontrol
+    import requests as http_requests
+    from google.auth.transport import requests as ga_requests
+
+    return ga_requests.Request(
+        session=cachecontrol.CacheControl(http_requests.Session())
+    )
 
 
 def _bearer_token(request: Request) -> str:
@@ -64,7 +78,8 @@ def verify_internal(request: Request) -> dict:
             "for local dev)",
         )
     token = _bearer_token(request)
-    if token.count(".") != 2:  # device keys / junk are not JWTs; skip cert fetch
+    # Junk rejection before any network work: not-a-JWT or absurdly large.
+    if token.count(".") != 2 or len(token) > 4096:
         raise ApiError(401, "unauthorized", "expected a Google-signed OIDC token")
     allowed_audiences = {cfg.service_url, f"{cfg.service_url}{request.url.path}"}
     if request.url.hostname:
@@ -73,11 +88,10 @@ def verify_internal(request: Request) -> dict:
         base = f"https://{request.url.hostname}"
         allowed_audiences.update({base, f"{base}{request.url.path}"})
     try:
-        from google.auth.transport import requests as ga_requests
         from google.oauth2 import id_token as google_id_token
 
         claims = google_id_token.verify_oauth2_token(
-            token, ga_requests.Request(), audience=None
+            token, _cert_transport(), audience=None
         )
     except ApiError:
         raise
