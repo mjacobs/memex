@@ -68,7 +68,7 @@ def enrich_text(text: str) -> EnrichmentResult:
 def enrich_audio(audio: bytes, mime_type: str) -> EnrichmentResult:
     """Enrich an audio capture — Gemini is audio-native, no STT service."""
     response = _client().models.generate_content(
-        model=settings().model,
+        model=settings().transcribe_model,
         contents=[
             types.Part.from_bytes(data=audio, mime_type=mime_type),
             _INSTRUCTION_AUDIO,
