@@ -11,3 +11,38 @@ resource "google_firestore_database" "default" {
 
   depends_on = [google_project_service.enabled]
 }
+
+# Composite indexes for every filtered + ULID-ordered query in the
+# contract. Firestore scans these backward too, so each serves both
+# ascending (agent tools) and descending (API feed) order.
+locals {
+  eq_indexes = {
+    tasks_status     = { collection = "tasks", field = "status", array = false }
+    approvals_status = { collection = "approvals", field = "status", array = false }
+    notes_kind       = { collection = "notes", field = "kind", array = false }
+    notes_tags       = { collection = "notes", field = "tags", array = true }
+  }
+}
+
+resource "google_firestore_index" "eq_by_id" {
+  # Both id directions: the agent tools list ascending, the API feed
+  # descending, and Firestore requires an exact direction match on the
+  # orderBy field.
+  for_each = {
+    for pair in setproduct(keys(local.eq_indexes), ["ASCENDING", "DESCENDING"]) :
+    "${pair[0]}_${lower(pair[1])}" => merge(local.eq_indexes[pair[0]], { dir = pair[1] })
+  }
+  project    = var.project
+  database   = google_firestore_database.default.name
+  collection = each.value.collection
+
+  fields {
+    field_path   = each.value.field
+    array_config = each.value.array ? "CONTAINS" : null
+    order        = each.value.array ? null : "ASCENDING"
+  }
+  fields {
+    field_path = "id"
+    order      = each.value.dir
+  }
+}
