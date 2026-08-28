@@ -6,7 +6,11 @@ set -euo pipefail
 
 : "${MEMEX_URL:?set MEMEX_URL to the deployed service URL}"
 : "${MEMEX_KEY:?set MEMEX_KEY to a device bearer key}"
-auth=(-H "Authorization: Bearer ${MEMEX_KEY}")
+# Header via 0600 file, not argv — argv is readable in /proc by local users.
+hdr=$(umask 077 && mktemp)
+trap 'rm -f "${hdr}"' EXIT
+printf 'Authorization: Bearer %s\n' "${MEMEX_KEY}" > "${hdr}"
+auth=(-H "@${hdr}")
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -26,7 +30,7 @@ curl -fsS "${auth[@]}" "${MEMEX_URL}/api/v1/notes/${note_id}" |
 
 say "audio capture (async via Eventarc)"
 wav=$(mktemp --suffix=.wav)
-trap 'rm -f "${wav}"' EXIT
+trap 'rm -f "${wav}" "${hdr}"' EXIT
 if command -v espeak-ng >/dev/null; then
   espeak-ng -w "${wav}" "Smoke test audio: schedule the dentist appointment for next week."
 else

@@ -175,3 +175,34 @@ def test_routine_tick_failed_run_returns_500(client, monkeypatch, fs):
     r = client.post("/internal/routines/daily_review/tick")
     assert r.status_code == 500
     assert r.json()["error"]["code"] == "routine_failed"
+
+
+def test_enrich_error_result_returns_502(client, monkeypatch, fs):
+    """Eventarc must see non-2xx for failed enrichment so it redelivers."""
+    import sys
+    import types as types_mod
+
+    cap = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        source="api",
+        device_id="dev",
+        kind="audio",
+        audio_gcs_uri="gs://b/captures/x.m4a",
+        audio_mime="audio/mp4",
+        status="pending",
+    )
+    store.put(cap)
+
+    module = types_mod.ModuleType("memex.agent.service")
+    module.enrich_capture = lambda capture_id: {
+        "capture": None,
+        "note": None,
+        "tasks": [],
+        "error": "vertex unavailable",
+    }
+    monkeypatch.setitem(sys.modules, "memex.agent.service", module)
+
+    r = client.post("/internal/enrich", json={"name": f"captures/{cap.id}.m4a"})
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "enrichment_failed"

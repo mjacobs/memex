@@ -56,12 +56,16 @@ The same request shape, verified working 2026-08-27:
 
 ```bash
 ffmpeg -f pulse -i default -t 5 -c:a aac /tmp/test.m4a
+# key goes through a file, not argv (argv is readable in /proc)
+hdr=$(umask 077 && mktemp)
+gcloud secrets versions access latest --secret memex-device-keys \
+  --project m4tt-xyz | jq -r '"Authorization: Bearer " + .phone' > "$hdr"
 curl -X POST "https://memex-PROJECT_NUMBER.us-central1.run.app/api/v1/capture/audio" \
-  -H "Authorization: Bearer $(gcloud secrets versions access latest \
-        --secret memex-device-keys --project m4tt-xyz | jq -r .phone)" \
+  -H "@$hdr" \
   -H "Content-Type: audio/mp4" \
   -H "X-Memex-Source: ios" \
   --data-binary @/tmp/test.m4a
+rm -f "$hdr"
 ```
 
 ## Notes

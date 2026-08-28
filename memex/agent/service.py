@@ -55,9 +55,8 @@ def enrich_capture(capture_id: str) -> dict:
             "tasks": [t.model_dump(mode="json") for t in tasks],
             "deduped": True,
         }
-    if capture.status == "processing" and store.now() - capture.created_at < timedelta(
-        minutes=30
-    ):
+    started = capture.processing_at or capture.created_at
+    if capture.status == "processing" and store.now() - started < timedelta(minutes=30):
         return {
             "capture": capture.model_dump(mode="json"),
             "note": None,
@@ -65,7 +64,9 @@ def enrich_capture(capture_id: str) -> dict:
             "in_progress": True,
         }
 
-    store.update(Capture, capture_id, {"status": "processing"})
+    store.update(
+        Capture, capture_id, {"status": "processing", "processing_at": store.now()}
+    )
     capture.status = "processing"
     try:
         trace: list[TraceEvent] = []
@@ -152,11 +153,17 @@ def run_routine(routine: str) -> dict:
     try:
         with tools.run_context(run.id) as ctx:
             result = asyncio.run(routines_mod.run_routine_session(routine))
-        run.status = "succeeded"
         run.summary = result.summary
         run.trace = result.trace
         run.note_id = ctx.note_ids[-1] if ctx.note_ids else None
         run.approval_ids = ctx.approval_ids
+        if run.note_id is None:
+            # Both routines must end in create_note; a run without one is
+            # incomplete and should be retried by the scheduler.
+            run.status = "failed"
+            run.error = "routine session produced no note"
+        else:
+            run.status = "succeeded"
     except Exception as exc:
         logger.exception("routine %s failed (run %s)", routine, run.id)
         run.status = "failed"

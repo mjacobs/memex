@@ -38,6 +38,7 @@ class Capture(BaseModel):
     audio_gcs_uri: str | None = None
     audio_mime: str | None = None
     status: CaptureStatus
+    processing_at: datetime | None = None  # set when an enrichment run claims it
     error: str | None = None
     note_id: str | None = None
 

@@ -25,3 +25,11 @@ def test_no_static_dir_returns_contract_404(fs, monkeypatch, tmp_path):
     r = client.get("/definitely-not-here")
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "not_found"
+
+
+def test_unknown_api_route_is_json_404(client):
+    from tests.conftest import AUTH
+
+    r = client.get("/api/v1/nonexistent", headers=AUTH)
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"

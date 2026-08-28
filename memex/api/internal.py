@@ -48,7 +48,12 @@ async def enrich(request: Request) -> dict:
         ) from exc
     # enrich_capture is synchronous (GCS + Gemini + Firestore); keep it off
     # the event loop so /health and other requests stay responsive.
-    return await anyio.to_thread.run_sync(enrich_capture, capture_id)
+    result = await anyio.to_thread.run_sync(enrich_capture, capture_id)
+    if result.get("error"):
+        # Non-2xx so Eventarc redelivers transient failures instead of
+        # acking them (retention caps the retries).
+        raise ApiError(502, "enrichment_failed", result["error"])
+    return result
 
 
 @router.post("/routines/{routine}/tick")

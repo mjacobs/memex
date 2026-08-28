@@ -18,6 +18,9 @@ class SPAStaticFiles(StaticFiles):
     """Static files with SPA fallback: unknown paths serve index.html."""
 
     async def get_response(self, path: str, scope):
+        # API paths must 404 as JSON, never fall back to the SPA shell.
+        if path.startswith(("api/", "internal/")):
+            raise ApiError(404, "not_found", f"unknown route: /{path}")
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
