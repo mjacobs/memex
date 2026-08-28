@@ -123,7 +123,10 @@ class LinkIn(BaseModel):
 
 
 class LinksIn(BaseModel):
-    links: list[LinkIn]
+    # Raw dicts, validated one at a time in the handler: a typed list would
+    # make one malformed entry a 422 for the whole batch, and this endpoint
+    # promises that each link succeeds or fails on its own.
+    links: list[dict]
     source: str | None = None
 
 
@@ -225,7 +228,21 @@ def capture_links(body: LinksIn, device_id: str = Depends(require_device)) -> di
             f"at most {MAX_LINKS_PER_BATCH} links per request",
         )
     results: list[dict] = []
-    for link in body.links:
+    for raw in body.links:
+        url = raw.get("url") if isinstance(raw, dict) else None
+        try:
+            link = LinkIn.model_validate(raw)
+        except ValidationError as exc:
+            results.append(
+                {
+                    "url": url if isinstance(url, str) else None,
+                    "error": {
+                        "code": "invalid_link",
+                        "message": str(exc.errors(include_url=False)),
+                    },
+                }
+            )
+            continue
         try:
             capture = _save_link(link, body.source, device_id)
             _enrich_or_fail(capture)

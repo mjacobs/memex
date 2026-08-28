@@ -163,7 +163,7 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | ------------------------------------ | -------------------------------------------------- | ------------------------------------------ |
 | `POST /api/v1/capture`               | `{"text": "...", "source?": "..."}`                | `201 {capture, note, tasks}` — sync enrich |
 | `POST /api/v1/capture/link`          | `{"url": "...", "title?": "...", "note?": "..."}`  | `201 {capture, note, tasks}` — sync enrich |
-| `POST /api/v1/capture/links`         | `{"links": [{url, title?, note?}], "source?": "..."}` (max 20) | `201 {results: [{url, capture, note, tasks} \| {url, error}]}` |
+| `POST /api/v1/capture/links`         | `{"links": [{url, title?, note?}], "source?": "..."}` (max 20) | `201 {results: [{url, capture, note, tasks} \| {url, error}]}` — one bad entry never fails the batch; `url` is `null` if the entry had none |
 | `POST /api/v1/capture/audio`         | raw audio body; `Content-Type: audio/*`; `X-Memex-Source?` | `202 {"id": "<capture_id>"}` — GCS upload only |
 | `POST /api/v1/capture/image`         | `{"image_base64", "mime", "text?", "source_url?", "title?", "source?"}` | `202 {"id": "<capture_id>"}` — GCS upload only, max 10 MiB |
 | `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio/image status) |

@@ -322,6 +322,22 @@ def test_link_batch_reports_per_link_failure_without_failing_the_batch(
     assert good["capture"]["status"] == "enriched"
 
 
+def test_link_batch_reports_a_malformed_entry_without_failing_the_batch(
+    client, agent_stub
+):
+    """A missing url is one link's problem, not the whole triage session's."""
+    r = client.post(
+        "/api/v1/capture/links",
+        json={"links": [{"title": "no url here"}, {"url": "https://ok.example/"}]},
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    bad, good = r.json()["results"]
+    assert bad["url"] is None
+    assert bad["error"]["code"] == "invalid_link"
+    assert good["capture"]["status"] == "enriched"
+
+
 def test_link_batch_empty_and_oversized_rejected(client, agent_stub):
     r = client.post("/api/v1/capture/links", json={"links": []}, headers=AUTH)
     assert r.status_code == 400
