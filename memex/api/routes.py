@@ -3,6 +3,7 @@
 import base64
 import binascii
 from typing import get_args
+from urllib.parse import urlparse
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, Request
@@ -63,6 +64,35 @@ def _enrich(capture_id: str) -> dict:
     return enrich_capture(capture_id)
 
 
+def _enrich_or_fail(capture: Capture) -> None:
+    """Run enrichment for a just-written capture; mark the capture failed and
+    raise ApiError on error. enrich_capture reports enrichment failures in its
+    result rather than raising, so both shapes are handled here."""
+    try:
+        result = _enrich(capture.id)
+    except ApiError:
+        raise
+    except Exception as exc:
+        store.update(Capture, capture.id, {"status": "failed", "error": str(exc)})
+        raise ApiError(502, "enrichment_failed", str(exc)) from exc
+    if result.get("error"):
+        raise ApiError(502, "enrichment_failed", result["error"])
+
+
+def _capture_result(capture: Capture) -> dict:
+    """The {capture, note, tasks} envelope the sync capture paths return."""
+    capture = store.get(Capture, capture.id) or capture
+    note = store.get(Note, capture.note_id) if capture.note_id else None
+    tasks: list[Task] = []
+    if note:
+        tasks = [t for tid in note.task_ids if (t := store.get(Task, tid))]
+    return {
+        "capture": dump(capture),
+        "note": dump(note) if note else None,
+        "tasks": [dump(t) for t in tasks],
+    }
+
+
 class CaptureIn(BaseModel):
     text: str
     source: str | None = None
@@ -82,26 +112,102 @@ def capture_text(body: CaptureIn, device_id: str = Depends(require_device)) -> d
         status="pending",
     )
     store.put(capture)
-    try:
-        result = _enrich(capture.id)
-    except ApiError:
-        raise
-    except Exception as exc:
-        store.update(Capture, capture.id, {"status": "failed", "error": str(exc)})
-        raise ApiError(502, "enrichment_failed", str(exc)) from exc
-    if result.get("error"):
-        # enrich_capture reports failures in the result rather than raising.
-        raise ApiError(502, "enrichment_failed", result["error"])
-    capture = store.get(Capture, capture.id) or capture
-    note = store.get(Note, capture.note_id) if capture.note_id else None
-    tasks: list[Task] = []
-    if note:
-        tasks = [t for tid in note.task_ids if (t := store.get(Task, tid))]
-    return {
-        "capture": dump(capture),
-        "note": dump(note) if note else None,
-        "tasks": [dump(t) for t in tasks],
-    }
+    _enrich_or_fail(capture)
+    return _capture_result(capture)
+
+
+class LinkIn(BaseModel):
+    url: str
+    title: str | None = None
+    note: str | None = None
+
+
+class LinksIn(BaseModel):
+    links: list[LinkIn]
+    source: str | None = None
+
+
+MAX_URL_LENGTH = 2048
+MAX_LINKS_PER_BATCH = 20
+
+
+def _clean_url(url: str) -> str:
+    """Validate a client-supplied URL. http/https only — anything else (file:,
+    javascript:, chrome-extension:) is not a page anyone can read later, and
+    the URL is echoed into a rendered markdown link."""
+    url = url.strip()
+    if not url:
+        raise ApiError(400, "invalid_url", "url must be non-empty")
+    if len(url) > MAX_URL_LENGTH:
+        raise ApiError(400, "invalid_url", f"url exceeds {MAX_URL_LENGTH} characters")
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        raise ApiError(400, "invalid_url", "url must be an http(s) URL")
+    return url
+
+
+def _truncate(value: str | None, limit: int) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value[:limit] if value else None
+
+
+def _save_link(link: LinkIn, source: str | None, device_id: str) -> Capture:
+    """Persist one link capture (pending) after validating its URL."""
+    capture = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        source=_source(source),
+        device_id=device_id,
+        kind="link",
+        url=_clean_url(link.url),
+        title=_truncate(link.title, 500),
+        text=_truncate(link.note, 4000),
+        status="pending",
+    )
+    store.put(capture)
+    return capture
+
+
+@router.post("/capture/link", status_code=201)
+def capture_link(body: LinkIn, device_id: str = Depends(require_device)) -> dict:
+    """Save one link as a read-later note. The page is never fetched server
+    side; the note is written from the URL, title, and user note alone."""
+    capture = _save_link(body, None, device_id)
+    _enrich_or_fail(capture)
+    return _capture_result(capture)
+
+
+@router.post("/capture/links", status_code=201)
+def capture_links(body: LinksIn, device_id: str = Depends(require_device)) -> dict:
+    """Batch form of /capture/link — one triage session saves several tabs at
+    once, and a per-link round trip would mean N auth + N requests.
+
+    Each link succeeds or fails on its own: a bad URL or a failed enrichment is
+    reported in that link's result rather than failing the whole batch, so a
+    client never has to guess which of its links landed.
+    """
+    if not body.links:
+        raise ApiError(400, "empty_batch", "links must be non-empty")
+    if len(body.links) > MAX_LINKS_PER_BATCH:
+        raise ApiError(
+            400,
+            "batch_too_large",
+            f"at most {MAX_LINKS_PER_BATCH} links per request",
+        )
+    results: list[dict] = []
+    for link in body.links:
+        try:
+            capture = _save_link(link, body.source, device_id)
+            _enrich_or_fail(capture)
+        except ApiError as exc:
+            results.append(
+                {"url": link.url, "error": {"code": exc.code, "message": exc.message}}
+            )
+            continue
+        results.append({"url": link.url, **_capture_result(capture)})
+    return {"results": results}
 
 
 @router.post("/capture/audio", status_code=202)

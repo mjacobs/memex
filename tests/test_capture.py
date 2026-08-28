@@ -213,6 +213,114 @@ def test_capture_image_bytes_404_for_non_image(client, agent_stub):
     ).json()["capture"]["id"]
     r = client.get(f"/api/v1/captures/{capture_id}/image", headers=AUTH)
     assert r.status_code == 404
+def test_link_capture_happy_path(client, agent_stub):
+    r = client.post(
+        "/api/v1/capture/link",
+        json={
+            "url": "https://example.com/post?x=1",
+            "title": "A post",
+            "note": "read before the review",
+        },
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    body = r.json()
+    cap = body["capture"]
+    assert cap["kind"] == "link"
+    assert cap["url"] == "https://example.com/post?x=1"
+    assert cap["title"] == "A post"
+    assert cap["text"] == "read before the review"
+    assert cap["status"] == "enriched"
+    note = body["note"]
+    assert note["kind"] == "link"
+    assert note["body"].startswith("[A post](https://example.com/post?x=1)")
+    assert "read-later" in note["tags"]
+    assert agent_stub["enrich"] == [cap["id"]]
+
+
+def test_link_capture_title_and_note_optional(client, agent_stub):
+    r = client.post(
+        "/api/v1/capture/link", json={"url": "https://example.com/"}, headers=AUTH
+    )
+    assert r.status_code == 201
+    cap = r.json()["capture"]
+    assert cap["title"] is None and cap["text"] is None
+
+
+def test_link_capture_rejects_non_http_urls(client, agent_stub):
+    for url in ["", "   ", "ftp://example.com/x", "javascript:alert(1)", "not a url"]:
+        r = client.post("/api/v1/capture/link", json={"url": url}, headers=AUTH)
+        assert r.status_code == 400, url
+        assert r.json()["error"]["code"] == "invalid_url", url
+    assert agent_stub["enrich"] == []
+
+
+def test_link_capture_rejects_overlong_url(client, agent_stub):
+    r = client.post(
+        "/api/v1/capture/link",
+        json={"url": "https://example.com/" + "a" * 2100},
+        headers=AUTH,
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_url"
+
+
+def test_link_batch_creates_one_capture_per_link(client, agent_stub):
+    r = client.post(
+        "/api/v1/capture/links",
+        json={
+            "links": [
+                {"url": "https://a.example/1", "title": "One"},
+                {"url": "https://b.example/2", "title": "Two"},
+            ],
+            "source": "desktop",
+        },
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    results = r.json()["results"]
+    assert [x["url"] for x in results] == [
+        "https://a.example/1",
+        "https://b.example/2",
+    ]
+    assert [x["capture"]["source"] for x in results] == ["desktop", "desktop"]
+    assert len(agent_stub["enrich"]) == 2
+    assert len({x["note"]["id"] for x in results}) == 2
+
+
+def test_link_batch_reports_per_link_failure_without_failing_the_batch(
+    client, agent_stub
+):
+    r = client.post(
+        "/api/v1/capture/links",
+        json={
+            "links": [
+                {"url": "chrome://newtab"},
+                {"url": "https://ok.example/"},
+            ]
+        },
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    bad, good = r.json()["results"]
+    assert bad["error"]["code"] == "invalid_url"
+    assert "capture" not in bad
+    assert good["capture"]["status"] == "enriched"
+
+
+def test_link_batch_empty_and_oversized_rejected(client, agent_stub):
+    r = client.post("/api/v1/capture/links", json={"links": []}, headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "empty_batch"
+
+    r = client.post(
+        "/api/v1/capture/links",
+        json={"links": [{"url": f"https://e.example/{i}"} for i in range(21)]},
+        headers=AUTH,
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "batch_too_large"
+    assert agent_stub["enrich"] == []
 
 
 def test_get_capture_404(client):

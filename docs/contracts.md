@@ -55,14 +55,15 @@ Raw inbound payloads; immutable except `status`/enrichment linkage.
 | `created_at`    | timestamp                                  |                                          |
 | `source`        | `"ios" \| "desktop" \| "web" \| "api"`     | free-form fallback `"api"`               |
 | `device_id`     | string                                     | from the bearer key that authenticated   |
-| `kind`          | `"text" \| "audio" \| "image"`             |                                          |
-| `text?`         | string                                     | kind=text; kind=image → optional caption |
+| `kind`          | `"text" \| "audio" \| "image" \| "link"`   |                                          |
+| `text?`         | string                                     | kind=text: the text; kind=image: optional caption; kind=link: the user's note |
+| `url?`          | string                                     | kind=link, http(s) only                  |
 | `audio_gcs_uri?`| string                                     | kind=audio, `gs://…`                     |
 | `audio_mime?`   | string                                     | e.g. `audio/mp4`, `audio/wav`            |
 | `image_gcs_uri?`| string                                     | kind=image, `gs://…` (same bucket/prefix as audio) |
 | `image_mime?`   | string                                     | e.g. `image/png`, `image/jpeg`           |
 | `source_url?`   | string                                     | kind=image, page the screenshot came from |
-| `title?`        | string                                     | kind=image, page title                   |
+| `title?`        | string                                     | kind=image/link, page title as the client reported it |
 | `status`        | `"pending" \| "processing" \| "enriched" \| "failed"` | audio/image start `pending`   |
 | `error?`        | string                                     | status=failed                            |
 | `note_id?`      | ulid                                       | set when enrichment lands                |
@@ -75,8 +76,8 @@ The feed. Both enriched captures and routine output.
 | ---------------- | ------------------------------------------- | --------------------------------------- |
 | `id`             | ulid                                        |                                         |
 | `created_at`     | timestamp                                   |                                         |
-| `kind`           | `"capture" \| "digest" \| "review"`         | digest/review written by routines       |
-| `capture_id?`    | ulid                                        | kind=capture                            |
+| `kind`           | `"capture" \| "digest" \| "review" \| "link"` | digest/review written by routines; link = a saved read-later page |
+| `capture_id?`    | ulid                                        | kind=capture/link                       |
 | `routine_run_id?`| ulid                                        | kind=digest/review                      |
 | `transcript?`    | string                                      | audio captures                          |
 | `body`           | string                                      | canonical text (original text, transcript, image description + caption + source link, or routine markdown) |
@@ -161,6 +162,8 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | method & path                        | req                                                | resp                                       |
 | ------------------------------------ | -------------------------------------------------- | ------------------------------------------ |
 | `POST /api/v1/capture`               | `{"text": "...", "source?": "..."}`                | `201 {capture, note, tasks}` — sync enrich |
+| `POST /api/v1/capture/link`          | `{"url": "...", "title?": "...", "note?": "..."}`  | `201 {capture, note, tasks}` — sync enrich |
+| `POST /api/v1/capture/links`         | `{"links": [{url, title?, note?}], "source?": "..."}` (max 20) | `201 {results: [{url, capture, note, tasks} \| {url, error}]}` |
 | `POST /api/v1/capture/audio`         | raw audio body; `Content-Type: audio/*`; `X-Memex-Source?` | `202 {"id": "<capture_id>"}` — GCS upload only |
 | `POST /api/v1/capture/image`         | `{"image_base64", "mime", "text?", "source_url?", "title?", "source?"}` | `202 {"id": "<capture_id>"}` — GCS upload only, max 10 MiB |
 | `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio/image status) |
@@ -187,6 +190,13 @@ Internal (OIDC-verified, no bearer):
 
 Audio object naming: `gs://<bucket>/captures/<capture_id>.<ext>` — the
 finalize event's object name is the capture id.
+
+Link captures are enriched from the URL, title, and user note **only** — the
+server never fetches a client-supplied URL. The note body's first line is a
+markdown link to the page, and `read-later` is always among its tags. In the
+batch form each link succeeds or fails independently: a rejected URL or a
+failed enrichment is reported in that link's own result, and the request still
+returns `201`.
 
 Entity JSON in responses mirrors the Firestore schema (timestamps as ISO
 strings, `trace` only on detail endpoints).
