@@ -42,6 +42,9 @@ const MAX_PAGES = 10;
 /** pendingCaptures: [{id, label, status}] — optimistic entries from the composer. */
 export default function Feed({ pendingCaptures, refreshToken }) {
   const [notes, setNotes] = useState(null);
+  // True when the scan stopped at MAX_PAGES with matches still possible
+  // further back — the empty state has to say "none found here", not "none".
+  const [partial, setPartial] = useState(false);
   const [error, setError] = useState(null);
   // The hash query is the one source of truth for the filter, so the back
   // button, the brand link, and a tag clicked on a note detail all land on
@@ -65,19 +68,30 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     // filters on one tag; a second tag narrows further, so keep paging until
     // a screenful of notes carries every selected tag (or the feed runs out).
     async function load() {
-      if (tags.length === 0) return (await api.listNotes({ limit: PAGE })).notes;
+      if (tags.length === 0) {
+        return { matches: (await api.listNotes({ limit: PAGE })).notes, partial: false };
+      }
       const matches = [];
       let before;
-      for (let page = 0; page < MAX_PAGES && matches.length < PAGE; page++) {
+      let exhausted = false;
+      let page = 0;
+      for (; page < MAX_PAGES && matches.length < PAGE; page++) {
         const { notes: batch } = await api.listNotes({ limit: PAGE, tag: tags[0], before });
         matches.push(...batch.filter((n) => tags.every((t) => n.tags?.includes(t))));
-        if (batch.length < PAGE) break;
+        if (batch.length < PAGE) {
+          exhausted = true;
+          break;
+        }
         before = batch[batch.length - 1].id;
       }
-      return matches.slice(0, PAGE);
+      return { matches: matches.slice(0, PAGE), partial: !exhausted && matches.length < PAGE };
     }
     load()
-      .then((loaded) => alive && setNotes(loaded))
+      .then(({ matches, partial: cut }) => {
+        if (!alive) return;
+        setNotes(matches);
+        setPartial(cut);
+      })
       .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
@@ -109,9 +123,11 @@ export default function Feed({ pendingCaptures, refreshToken }) {
         <Loading />
       ) : notes.length === 0 && pendingCaptures.length === 0 ? (
         <p className="empty">
-          {selectedTags.size > 0
-            ? "No notes match this tag filter."
-            : "Nothing captured yet. Type or record a thought below."}
+          {selectedTags.size === 0
+            ? "Nothing captured yet. Type or record a thought below."
+            : partial
+              ? `No notes with all of these tags in the last ${PAGE * MAX_PAGES} — try one tag at a time.`
+              : "No notes match this tag filter."}
         </p>
       ) : (
         notes.map((n) => (
