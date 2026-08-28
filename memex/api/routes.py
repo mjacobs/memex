@@ -131,19 +131,37 @@ MAX_URL_LENGTH = 2048
 MAX_LINKS_PER_BATCH = 20
 
 
+def _http_url(url: str | None) -> str | None:
+    """The URL if it is a usable http(s) page address, else None.
+
+    urlparse raises on some malformed input ("https://[::1"), which would be
+    a 500 on a route whose whole job is validating client-supplied text.
+    """
+    if not url:
+        return None
+    url = url.strip()
+    if not url or len(url) > MAX_URL_LENGTH:
+        return None
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        return None
+    return url
+
+
 def _clean_url(url: str) -> str:
     """Validate a client-supplied URL. http/https only — anything else (file:,
     javascript:, chrome-extension:) is not a page anyone can read later, and
     the URL is echoed into a rendered markdown link."""
-    url = url.strip()
-    if not url:
-        raise ApiError(400, "invalid_url", "url must be non-empty")
-    if len(url) > MAX_URL_LENGTH:
-        raise ApiError(400, "invalid_url", f"url exceeds {MAX_URL_LENGTH} characters")
-    parsed = urlparse(url)
-    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
-        raise ApiError(400, "invalid_url", "url must be an http(s) URL")
-    return url
+    cleaned = _http_url(url)
+    if cleaned is None:
+        raise ApiError(
+            400, "invalid_url", f"url must be an http(s) URL under "
+            f"{MAX_URL_LENGTH} characters"
+        )
+    return cleaned
 
 
 def _optional_url(url: str | None) -> str | None:
@@ -153,15 +171,7 @@ def _optional_url(url: str | None) -> str | None:
     400 — a screenshot's source page is a nice-to-have. A chrome-extension:
     or file: URL just gets dropped rather than costing the user the capture.
     """
-    if not url:
-        return None
-    url = url.strip()
-    if len(url) > MAX_URL_LENGTH:
-        return None
-    parsed = urlparse(url)
-    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
-        return None
-    return url
+    return _http_url(url)
 
 
 def _truncate(value: str | None, limit: int) -> str | None:
