@@ -82,7 +82,7 @@ The feed. Both enriched captures and routine output.
 | `transcript?`    | string                                      | audio captures                          |
 | `body`           | string                                      | canonical text (original text, transcript, image description + caption + source link, or routine markdown) |
 | `summary`        | string                                      |                                         |
-| `tags`           | string[]                                    | lowercase kebab                         |
+| `tags`           | string[]                                    | lowercase kebab, normalized on write by the model layer |
 | `task_ids`       | ulid[]                                      | tasks extracted from this note          |
 | `trace`          | array<event>                                | agent events for the turn that produced it, plus a `role:"user"` event per owner edit (see Trace) |
 

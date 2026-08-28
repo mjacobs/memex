@@ -4,10 +4,11 @@ These are the contract types every workstream imports. Field changes go
 through docs/contracts.md first.
 """
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 CaptureSource = Literal["ios", "desktop", "web", "api"]
 CaptureKind = Literal["text", "audio", "image", "link"]
@@ -17,6 +18,41 @@ TaskStatus = Literal["open", "done", "dropped"]
 ApprovalStatus = Literal["pending", "approved", "rejected"]
 RoutineName = Literal["daily_review", "nightly_digest"]
 RoutineStatus = Literal["running", "succeeded", "failed"]
+
+
+_TAG_SPLIT = re.compile(r",+")
+_TAG_STRIP = re.compile(r"[^a-z0-9-]+")
+
+
+def clean_tags(tags: list[str]) -> list[str]:
+    """Normalize to the lowercase-kebab tags this contract promises.
+
+    A tag doubles as a filter URL segment, and the reader splits that on
+    commas — so a tag stored as "foo,bar" could never match the note carrying
+    it. Rather than reject it, it becomes the two tags it plainly means;
+    everything else outside lowercase kebab becomes a hyphen, so "Read Later"
+    is the "read-later" it was going to be anyway. Duplicates and empties go.
+
+    Enforced by the models rather than at each call site, because tags arrive
+    from the user, from enrichment, and from routines, and only one of those
+    can be asked to read the contract.
+    """
+    out: list[str] = []
+    for raw in tags:
+        for piece in _TAG_SPLIT.split(str(raw).strip().lower()):
+            tag = _TAG_STRIP.sub("-", piece).strip("-")
+            if tag and tag not in out:
+                out.append(tag)
+    return out
+
+
+class _Tagged(BaseModel):
+    """Mixin for the entities that carry user-facing tags."""
+
+    @field_validator("tags", mode="after", check_fields=False)
+    @classmethod
+    def _normalize_tags(cls, tags: list[str]) -> list[str]:
+        return clean_tags(tags)
 
 
 class TraceEvent(BaseModel):
@@ -53,7 +89,7 @@ class Capture(BaseModel):
     note_id: str | None = None
 
 
-class Note(BaseModel):
+class Note(_Tagged):
     id: str
     created_at: datetime
     kind: NoteKind
@@ -67,7 +103,7 @@ class Note(BaseModel):
     trace: list[TraceEvent] = Field(default_factory=list)
 
 
-class Task(BaseModel):
+class Task(_Tagged):
     id: str
     title: str
     status: TaskStatus = "open"

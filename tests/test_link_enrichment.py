@@ -175,3 +175,24 @@ def test_link_capture_without_a_url_fails_cleanly(fs, canned):
     assert "no url" in out["error"]
     stored = store.get(Capture, cap.id)
     assert stored is not None and stored.status == "failed"
+
+
+def test_generated_tags_are_normalized_and_filterable(fs, monkeypatch):
+    """Tags off the model land in filter URLs like any other, so they go
+    through the same normalization the contract promises."""
+    from memex.agent import service
+
+    monkeypatch.setattr(
+        service,
+        "enrich_link",
+        lambda url, title, note: EnrichmentResult(
+            transcript="t",
+            summary="s",
+            tags=["Read Later", "foo,bar", "Read Later"],
+            action_items=[],
+        ),
+    )
+    cap = _link_capture()
+    out = service.enrich_capture(cap.id)
+
+    assert out["note"]["tags"] == ["read-later", "foo", "bar"]
