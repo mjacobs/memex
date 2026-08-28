@@ -18,12 +18,30 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+// What a rendered body is allowed to be: prose, lists, code, tables, links.
+// Deliberately no <img>, and no tag or attribute that fetches on its own —
+// note text is model-written from captured material, and a screenshot or a
+// saved page can carry an injected instruction. An <img> the model was talked
+// into emitting would silently GET an attacker URL with whatever it encoded
+// into the path the moment the digest is opened. A link still has to be
+// clicked, which is the line we draw.
+const ALLOWED_TAGS = [
+  "p", "br", "hr", "strong", "em", "del", "code", "pre", "blockquote",
+  "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+  "a", "table", "thead", "tbody", "tr", "th", "td",
+];
+// target/rel are absent on purpose: the hook above adds them after attribute
+// filtering, so the note text can never supply its own.
+const ALLOWED_ATTR = ["href", "title"];
+
 /** Render note/run body text as sanitized markdown. */
 export function Markdown({ text }) {
   const html = useMemo(() => {
     if (!text) return "";
     return DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }), {
-      ADD_ATTR: ["target", "rel"],
+      ALLOWED_TAGS,
+      ALLOWED_ATTR,
+      ALLOW_DATA_ATTR: false,
     });
   }, [text]);
   if (!text) return null;
