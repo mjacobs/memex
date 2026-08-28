@@ -315,9 +315,13 @@ def patch_note(note_id: str, body: NotePatch) -> dict:
         text=f"Edited {_edit_summary(changed)}",
         args=args,
     )
-    trace = [e.model_dump(mode="python") for e in note.trace]
-    trace.append(event.model_dump(mode="python"))
-    store.update(Note, note_id, {**updates, "trace": trace})
+    # Appended server-side rather than rewritten from the copy we just read:
+    # two edits landing at once must not drop one another's audit event.
+    store.update(
+        Note,
+        note_id,
+        {**updates, "trace": store.array_union([event.model_dump(mode="python")])},
+    )
     updated = store.get(Note, note_id)
     assert updated is not None
     return {"note": dump(updated)}

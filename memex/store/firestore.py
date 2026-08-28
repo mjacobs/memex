@@ -47,6 +47,16 @@ def update[M: BaseModel](model: type[M], doc_id: str, changes: dict) -> None:
     db().collection(COLLECTIONS[model]).document(doc_id).update(changes)
 
 
+def array_union(values: list) -> object:
+    """Sentinel value for update(): append to an array field server-side.
+
+    Lets a caller grow a list (a note's trace, say) without the
+    read-modify-write round trip, which two concurrent writers can
+    interleave and silently drop one of the appended entries.
+    """
+    return firestore.ArrayUnion(values)
+
+
 def delete[M: BaseModel](model: type[M], doc_id: str) -> None:
     """Hard-delete a doc. Callers own any dangling references (see routes)."""
     db().collection(COLLECTIONS[model]).document(doc_id).delete()

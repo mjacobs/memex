@@ -8,6 +8,8 @@ limit/stream. Used when FIRESTORE_EMULATOR_HOST is unset.
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
+from google.cloud.firestore_v1.transforms import ArrayUnion
+
 
 @dataclass
 class FakeSnapshot:
@@ -33,7 +35,14 @@ class FakeDocument:
     def update(self, changes: dict) -> None:
         if self._id not in self._collection.docs:
             raise KeyError(f"no document {self._id}")
-        self._collection.docs[self._id].update(deepcopy(changes))
+        doc = self._collection.docs[self._id]
+        for key, value in deepcopy(changes).items():
+            if isinstance(value, ArrayUnion):
+                existing = list(doc.get(key) or [])
+                # Firestore's ArrayUnion appends only values not already there.
+                doc[key] = existing + [v for v in value.values if v not in existing]
+            else:
+                doc[key] = value
 
     def delete(self) -> None:
         self._collection.docs.pop(self._id, None)
