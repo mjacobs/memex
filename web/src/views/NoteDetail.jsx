@@ -251,6 +251,11 @@ export default function NoteDetail({ id }) {
                   value={draft.body}
                   onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                 />
+              ) : note.kind === "capture" ? (
+                // A capture body is what you said or typed. Show it verbatim —
+                // markdown rendering would eat a leading "#" or "-" and hide
+                // anything that looks like a tag.
+                <p className="body-text">{note.body}</p>
               ) : (
                 <Markdown text={note.body} />
               )}
