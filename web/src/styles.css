@@ -13,6 +13,8 @@
   --purple-soft: #ede7f7;
   --blue: #2d5f8f;
   --blue-soft: #e3edf6;
+  --teal: #1f6f6b;
+  --teal-soft: #ddefed;
   --red: #b3403a;
   --red-soft: #f8e5e4;
   --radius: 10px;
@@ -35,6 +37,8 @@
     --purple-soft: #2d2739;
     --blue: #7aaad4;
     --blue-soft: #202b36;
+    --teal: #6fbfb8;
+    --teal-soft: #1c2b2a;
     --red: #d97b74;
     --red-soft: #382423;
   }
@@ -246,6 +250,11 @@ a {
 .badge.digest {
   background: var(--purple-soft);
   color: var(--purple);
+}
+
+.badge.link {
+  background: var(--teal-soft);
+  color: var(--teal);
 }
 
 .badge.review {
@@ -467,6 +476,11 @@ a {
 
 .markdown p {
   margin: 8px 0;
+}
+
+.markdown a {
+  color: var(--blue);
+  overflow-wrap: anywhere;
 }
 
 .markdown ul,

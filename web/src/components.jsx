@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
-// External links (http/https) open in a new tab with noopener/noreferrer;
-// in-app links (href="#/...", e.g. from routine-generated citations like
-// "[note](#/notes/<id>)") stay as plain same-tab anchors so the hash router
-// picks them up natively.
+// External links (http/https) open in a new tab with noopener/noreferrer, so
+// following a saved read-later link doesn't throw away the feed; in-app links
+// (href="#/...", e.g. routine-generated citations like "[note](#/notes/<id>)")
+// stay as plain same-tab anchors so the hash router picks them up natively.
+// Added after sanitization, where the note text itself can't smuggle them in.
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName !== "A") return;
   const href = node.getAttribute("href") || "";

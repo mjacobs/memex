@@ -4,7 +4,9 @@ import { navigate, useQuery } from "../router.js";
 import { Badge, ErrorBanner, Loading, Tags, TagFilterBar } from "../components.jsx";
 
 function NoteCard({ note, selectedTags, onTagClick }) {
-  const routine = note.kind !== "capture";
+  // Routine output (digest/review) gets the accented card; captures and saved
+  // links are the user's own material and stay plain.
+  const routine = note.kind === "digest" || note.kind === "review";
   return (
     <div
       className={`card clickable ${routine ? `note-routine kind-${note.kind}` : ""}`}
