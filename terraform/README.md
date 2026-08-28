@@ -73,3 +73,9 @@ rotating keys.
   (`audio_retention_days`); Firestore keeps the transcript.
 - **Scheduler**: `daily_review` at 09:00, `nightly_digest` at 03:00, both in
   `time_zone` (default `America/Los_Angeles`).
+- **Eventarc ack deadline (manual)**: the Eventarc-managed Pub/Sub push
+  subscription defaults to a 10 s ack deadline, shorter than a synchronous
+  enrichment run, which causes redelivery (the app dedupes, but retries burn
+  cycles). Terraform does not own that subscription; after (re)creating the
+  trigger, raise it once:
+  `gcloud pubsub subscriptions update <eventarc-...-sub-...> --ack-deadline=600 --project <project>`

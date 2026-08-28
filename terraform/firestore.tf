@@ -46,3 +46,24 @@ resource "google_firestore_index" "eq_by_id" {
     order      = each.value.dir
   }
 }
+
+resource "google_firestore_index" "notes_tag_kind" {
+  # GET /notes?tag=X&kind=Y filters on both; array-contains + equality + id
+  # needs its own composite (the feed only queries descending).
+  project    = var.project
+  database   = google_firestore_database.default.name
+  collection = "notes"
+
+  fields {
+    field_path   = "tags"
+    array_config = "CONTAINS"
+  }
+  fields {
+    field_path = "kind"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "id"
+    order      = "DESCENDING"
+  }
+}

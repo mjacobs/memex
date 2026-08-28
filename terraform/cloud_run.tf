@@ -56,6 +56,11 @@ resource "google_cloud_run_v2_service" "app" {
       }
 
       env {
+        name  = "MEMEX_TRANSCRIBE_MODEL"
+        value = var.transcribe_model
+      }
+
+      env {
         name  = "MEMEX_AUDIO_BUCKET"
         value = google_storage_bucket.audio.name
       }
@@ -65,6 +70,14 @@ resource "google_cloud_run_v2_service" "app" {
       env {
         name  = "MEMEX_SERVICE_URL"
         value = local.service_url
+      }
+
+      # Pin the /internal invoker allowlist to the actual SA emails so the
+      # app default's "memex-" prefix assumption can't drift from
+      # var.service_name.
+      env {
+        name  = "MEMEX_INTERNAL_INVOKERS"
+        value = "${google_service_account.trigger.email},${google_service_account.scheduler.email}"
       }
 
       env {
@@ -87,8 +100,8 @@ resource "google_cloud_run_v2_service" "app" {
     google_secret_manager_secret_iam_member.run_device_keys,
   ]
 
-  # Image rollouts happen via `gcloud run deploy` / `make deploy`; keep
-  # terraform from reverting them on the next apply.
+  # Image rollouts happen via `make deploy` (gcloud builds submit +
+  # gcloud run deploy); keep terraform from reverting them on the next apply.
   lifecycle {
     ignore_changes = [
       client,

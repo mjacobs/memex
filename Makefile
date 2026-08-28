@@ -14,6 +14,7 @@ emulator:
 api:
 	FIRESTORE_EMULATOR_HOST=$(FIRESTORE_EMULATOR_HOST_VALUE) \
 	MEMEX_DEVICE_KEYS_JSON='{"dev": "dev-key"}' \
+	MEMEX_INSECURE_LOCAL=1 \
 	uv run uvicorn memex.api.app:app --reload --port 8780
 
 ## Frontend dev server (proxies /api to :8780)
@@ -30,5 +31,13 @@ lint:
 build:
 	cd web && pnpm install && pnpm build
 
+## Full code rollout: SPA build -> container build/push -> Cloud Run deploy.
+## (terraform ignores the container image on purpose; run `terraform apply`
+## separately for infrastructure changes.)
+PROJECT ?= m4tt-xyz
+REGION ?= us-central1
+IMAGE ?= $(REGION)-docker.pkg.dev/$(PROJECT)/memex/memex:latest
+
 deploy: build
-	cd terraform && terraform apply
+	gcloud builds submit --project $(PROJECT) --tag $(IMAGE) .
+	gcloud run deploy memex --project $(PROJECT) --region $(REGION) --image $(IMAGE)

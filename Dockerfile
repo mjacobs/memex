@@ -20,4 +20,7 @@ RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH" \
     PORT=8080
 
+RUN useradd --create-home --uid 1000 memex
+USER memex
+
 CMD exec uvicorn memex.api.app:app --host 0.0.0.0 --port ${PORT}

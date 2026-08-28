@@ -23,8 +23,14 @@ variable "image" {
 
 variable "model" {
   type        = string
-  description = "Gemini model id (MEMEX_MODEL)."
-  default     = "gemini-3.5-flash"
+  description = "Gemini model id for analysis (MEMEX_MODEL)."
+  default     = "gemini-3.7-flash"
+}
+
+variable "transcribe_model" {
+  type        = string
+  description = "Gemini model id for audio transcription (MEMEX_TRANSCRIBE_MODEL)."
+  default     = "gemini-3.5-flash-lite"
 }
 
 variable "vertex_location" {
