@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
-import { Badge, ErrorBanner, Loading, Trace } from "../components.jsx";
+import { Badge, ErrorBanner, Loading, Markdown, Trace } from "../components.jsx";
 
 const ROUTINE_LABELS = {
   daily_review: "Daily review",
@@ -85,7 +85,7 @@ export function RunDetail({ id }) {
           {run.summary && (
             <div className="section">
               <h3>Summary</h3>
-              <p className="body-text">{run.summary}</p>
+              <Markdown text={run.summary} />
             </div>
           )}
           {run.error && (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
-import { Badge, ErrorBanner, Loading, Tags, Trace } from "../components.jsx";
+import { Badge, ErrorBanner, Loading, Markdown, Tags, Trace } from "../components.jsx";
 
 function LinkedTasks({ taskIds }) {
   const [tasks, setTasks] = useState(null);
@@ -87,12 +87,16 @@ export default function NoteDetail({ id }) {
           )}
           <div className="section">
             <h3>{note.transcript ? "Transcript" : "Body"}</h3>
-            <p className="body-text">{note.transcript || note.body}</p>
+            {note.transcript ? (
+              <p className="body-text">{note.transcript}</p>
+            ) : (
+              <Markdown text={note.body} />
+            )}
           </div>
           {note.transcript && note.body && note.body !== note.transcript && (
             <div className="section">
               <h3>Body</h3>
-              <p className="body-text">{note.body}</p>
+              <Markdown text={note.body} />
             </div>
           )}
           <Tags tags={note.tags} />

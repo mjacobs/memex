@@ -1,4 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+
+/** Render note/run body text as sanitized markdown. */
+export function Markdown({ text }) {
+  const html = useMemo(() => {
+    if (!text) return "";
+    return DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }));
+  }, [text]);
+  if (!text) return null;
+  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 export function Badge({ value }) {
   if (!value) return null;
