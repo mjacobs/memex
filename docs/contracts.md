@@ -203,6 +203,25 @@ site chose.
 Entity JSON in responses mirrors the Firestore schema (timestamps as ISO
 strings, `trace` only on detail endpoints).
 
+### Accepted risk: a screenshot can put a task on your list
+
+Capturing a screenshot and getting its to-dos back is the point of image
+capture, so a screenshot of a page is allowed to produce tasks. That means a
+page you screenshot could word itself to produce a task you did not ask for.
+We accept it, bounded like this:
+
+- a task is an inert title in your list. Nothing acts on it — routines can
+  only *propose* task changes, and every proposal goes to the approval queue;
+- the enrichment prompts state that captured material is content to describe,
+  never instructions, and each metadata field is flattened to one line so a
+  page title cannot pose as the user's own note;
+- a link saved with no note of your own produces no tasks at all, since
+  nothing in a bare URL and a site-chosen title is you asking for anything.
+
+Closing it fully would mean extracting tasks from a separate model call over
+the user's caption alone — a real option if this ever bites, at the cost of a
+second call per capture and of screenshots that no longer yield their to-dos.
+
 ## Agent tool signatures (ADK function tools)
 
 Python signatures; all return plain dicts. These are the only writes the model
