@@ -290,6 +290,47 @@ a {
   margin-bottom: 12px;
 }
 
+.note-actions button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.note-actions button.danger {
+  color: var(--red);
+}
+
+.note-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.note-edit {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  outline: none;
+  resize: vertical;
+}
+
+.note-edit:focus {
+  border-color: var(--accent);
+}
+
+.note-edit-actions {
+  margin-top: 12px;
+}
+
 .body-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -468,6 +509,10 @@ a {
 
 .trace-event:first-child {
   border-top: none;
+}
+
+.trace-event.user-edit {
+  border-left: 3px solid var(--blue);
 }
 
 .trace-role {

@@ -84,6 +84,9 @@ export const api = {
     return request(`/api/v1/notes${qs ? `?${qs}` : ""}`);
   },
   getNote: (id) => request(`/api/v1/notes/${id}`),
+  patchNote: (id, changes) =>
+    request(`/api/v1/notes/${id}`, { method: "PATCH", body: changes }),
+  deleteNote: (id) => request(`/api/v1/notes/${id}`, { method: "DELETE" }),
   listTasks: (status = "open") => request(`/api/v1/tasks?status=${status}`),
   patchTask: (id, changes) =>
     request(`/api/v1/tasks/${id}`, { method: "PATCH", body: changes }),

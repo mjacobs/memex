@@ -53,17 +53,21 @@ function Json({ value }) {
 
 function TraceEvent({ event }) {
   const role = event.role || "model";
+  // A role="user" event is either the prompt that started the turn or an owner
+  // edit; PATCH /notes/{id} is the only writer of args.fields, so it labels
+  // itself rather than hiding among the agent's inputs.
+  const isEdit = role === "user" && Array.isArray(event.args?.fields);
   return (
-    <div className="trace-event">
+    <div className={`trace-event ${isEdit ? "user-edit" : ""}`}>
       <div className="row">
-        <span className={`trace-role ${role}`}>{role}</span>
+        <span className={`trace-role ${role}`}>{isEdit ? "user edit" : role}</span>
         {event.tool && <span className="muted">{event.tool}</span>}
         {event.t && <span className="muted">{event.t}</span>}
       </div>
       {event.text && <p className="trace-text">{event.text}</p>}
       {event.args !== undefined && event.args !== null && (
         <>
-          <div className="trace-label">args</div>
+          <div className="trace-label">{isEdit ? "changed" : "args"}</div>
           <Json value={event.args} />
         </>
       )}
