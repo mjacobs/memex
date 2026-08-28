@@ -29,7 +29,7 @@ dependency — unlike v0, which needed the Parakeet daemon.
    (or `kmenuedit`), command:
 
    ```
-   ~/dev/projects/memex/v1/scripts/memex-capture-voice.sh
+   <absolute path to your checkout>/scripts/memex-capture-voice.sh
    ```
 
    Suggested key: Meta+V. Both the start and stop press run the same command;
