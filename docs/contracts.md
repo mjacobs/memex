@@ -125,9 +125,14 @@ Approving applies the action server-side in the same request, then sets
 `PATCH /notes/{id}` do NOT go through approvals — the queue is only for
 **agent-proposed** mutations from routines.
 
-Deleting a note is a hard delete and does **not** cascade: tasks keep their
-`source_note_id` and captures keep their `note_id`, so both may point at a
-note that no longer exists. Readers must tolerate a 404 on those ids.
+Deleting a note is a hard delete of the note **and its originating capture**,
+including the capture's GCS blob (screenshot or recording) — for an image note
+the screenshot *is* the content, so "delete" must reclaim the bytes (decided
+with Matt 2026-08-28). Blob deletion is best-effort: a blob already aged out
+by lifecycle rules does not fail the request. Tasks are NOT cascaded: they
+keep their `source_note_id`, which may point at a note that no longer exists —
+deleting a note is not a retraction of the work it produced. Readers must
+tolerate a 404 on those ids.
 
 ### `routine_runs/{id}`
 
@@ -171,7 +176,7 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |
 | `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`; plus `image_url` for image captures |
 | `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event |
-| `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete      |
+| `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete; cascades to capture doc + GCS blob, not tasks |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |
 | `PATCH /api/v1/tasks/{id}`           | `{"status?", "title?", "tags?"}`                   | `200 {task}`                               |
 | `GET /api/v1/approvals`              | `?status=pending` (default pending)                | `200 {approvals: […]}`                     |
