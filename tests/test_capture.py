@@ -337,6 +337,20 @@ def test_link_batch_reports_a_malformed_entry_without_failing_the_batch(
     assert bad["error"]["code"] == "invalid_link"
     assert good["capture"]["status"] == "enriched"
 
+    # not even a JSON object: still that entry's problem alone
+    r = client.post(
+        "/api/v1/capture/links",
+        json={"links": [None, "https://not-an-object/", {"url": "https://ok2.example/"}]},
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    results = r.json()["results"]
+    assert [x.get("error", {}).get("code") for x in results[:2]] == [
+        "invalid_link",
+        "invalid_link",
+    ]
+    assert results[2]["capture"]["status"] == "enriched"
+
 
 def test_link_batch_empty_and_oversized_rejected(client, agent_stub):
     r = client.post("/api/v1/capture/links", json={"links": []}, headers=AUTH)

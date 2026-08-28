@@ -2,7 +2,7 @@
 
 import base64
 import binascii
-from typing import get_args
+from typing import Any, get_args
 from urllib.parse import urlparse
 
 import anyio.to_thread
@@ -123,10 +123,11 @@ class LinkIn(BaseModel):
 
 
 class LinksIn(BaseModel):
-    # Raw dicts, validated one at a time in the handler: a typed list would
-    # make one malformed entry a 422 for the whole batch, and this endpoint
-    # promises that each link succeeds or fails on its own.
-    links: list[dict]
+    # Untyped entries, validated one at a time in the handler: any shape
+    # Pydantic could reject here — a wrong type, a null, a missing url —
+    # would be a 422 for the whole batch, and this endpoint promises that
+    # each link succeeds or fails on its own.
+    links: list[Any]
     source: str | None = None
 
 
