@@ -36,11 +36,6 @@ function LinkedTasks({ taskIds }) {
                 <span className="task-title">{t.title}</span>
                 <Badge value={t.status} />
               </div>
-              {(t.due_hint || t.due_at) && (
-                <div className="due">
-                  due {t.due_at ? new Date(t.due_at).toLocaleDateString() : t.due_hint}
-                </div>
-              )}
               <Tags tags={t.tags} />
             </div>
           </div>

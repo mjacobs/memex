@@ -21,7 +21,7 @@ def test_enrichment_result_matches_verified_shape():
             "action_items": [{"title": "Buy milk"}],
         }
     )
-    assert r.action_items[0].due_hint is None
+    assert r.action_items[0].title == "Buy milk"
 
 
 def test_approval_action_discriminates():

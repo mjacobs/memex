@@ -39,7 +39,7 @@ def test_enrich_capture_text_happy_path(monkeypatch: pytest.MonkeyPatch) -> None
         transcript="call the plumber by friday",
         summary="Call the plumber.",
         tags=["home"],
-        action_items=[ActionItem(title="Call the plumber", due_hint="by friday")],
+        action_items=[ActionItem(title="Call the plumber")],
     )
     monkeypatch.setattr(service, "enrich_text", lambda text: canned)
 
@@ -51,7 +51,7 @@ def test_enrich_capture_text_happy_path(monkeypatch: pytest.MonkeyPatch) -> None
     assert out["note"]["capture_id"] == cap.id
     assert out["note"]["body"] == "call the plumber by friday"
     assert len(out["tasks"]) == 1
-    assert out["tasks"][0]["due_hint"] == "by friday"
+    assert out["tasks"][0]["title"] == "Call the plumber"
 
     stored_cap = store.get(Capture, cap.id)
     assert stored_cap is not None

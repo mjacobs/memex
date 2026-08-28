@@ -19,11 +19,6 @@ function TaskRow({ task, onToggle, busy }) {
           {task.status !== "open" && <Badge value={task.status} />}
         </div>
         <div className="row">
-          {(task.due_at || task.due_hint) && (
-            <span className="due">
-              due {task.due_at ? new Date(task.due_at).toLocaleDateString() : task.due_hint}
-            </span>
-          )}
           <span className="muted">created {relativeTime(task.created_at)}</span>
         </div>
         <Tags tags={task.tags} />

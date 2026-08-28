@@ -80,7 +80,7 @@ def create_note(
 def create_tasks(tasks: list[dict], source_note_id: str) -> dict:
     """Create tasks extracted from a note.
 
-    tasks: [{title, due_hint?, due_at?, tags?}] -> {task_ids: [...]}
+    tasks: [{title, tags?}] -> {task_ids: [...]}
     """
     task_ids: list[str] = []
     for spec in tasks:
@@ -90,8 +90,6 @@ def create_tasks(tasks: list[dict], source_note_id: str) -> dict:
             title=spec["title"],
             created_at=now,
             updated_at=now,
-            due_hint=spec.get("due_hint"),
-            due_at=spec.get("due_at"),
             tags=spec.get("tags") or [],
             source_note_id=source_note_id,
         )
@@ -115,7 +113,7 @@ def list_tasks(status: str = "open", limit: int = 100) -> dict:
 def update_task(task_id: str, changes: dict) -> dict:
     """Mutate a task directly. ONLY callable from capture enrichment;
     routines must use queue_approval."""
-    allowed = {"status", "title", "due_at", "due_hint", "tags"}
+    allowed = {"status", "title", "tags"}
     bad = set(changes) - allowed
     if bad:
         return {"error": f"disallowed fields: {sorted(bad)}"}

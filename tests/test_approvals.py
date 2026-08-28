@@ -65,7 +65,7 @@ def test_approve_applies_task_create(client, fs):
     approval = _make_approval(
         {
             "type": "task_create",
-            "task": {"title": "new task", "due_hint": "by Friday", "tags": ["x"]},
+            "task": {"title": "new task", "tags": ["x"]},
         }
     )
     r = client.post(f"/api/v1/approvals/{approval.id}/approve", headers=AUTH)
@@ -74,7 +74,6 @@ def test_approve_applies_task_create(client, fs):
     tasks = store.query(Task, filters=[("status", "==", "open")], limit=10)
     assert len(tasks) == 1
     assert tasks[0].title == "new task"
-    assert tasks[0].due_hint == "by Friday"
 
 
 def test_reject(client, fs):

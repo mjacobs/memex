@@ -25,8 +25,7 @@ Return JSON with:
   never distant third person ("The speaker needs to...", "The user wants...").
 - tags: 1-5 lowercase kebab-case topic tags.
 - action_items: concrete to-dos the memo commits to or requests, each with a
-  short imperative title and, when the memo gives a time reference, its
-  verbatim wording as due_hint (e.g. "by Friday"). Empty list if none.
+  short imperative title. Empty list if none.
 Do not invent content that is not in the audio.
 """
 
@@ -42,8 +41,7 @@ Return JSON with:
   never distant third person ("The speaker needs to...", "The user wants...").
 - tags: 1-5 lowercase kebab-case topic tags.
 - action_items: concrete to-dos the note commits to or requests, each with a
-  short imperative title and, when the note gives a time reference, its
-  verbatim wording as due_hint (e.g. "by Friday"). Empty list if none.
+  short imperative title. Empty list if none.
 Do not invent content that is not in the note.
 """
 

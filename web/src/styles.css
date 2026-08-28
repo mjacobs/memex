@@ -580,11 +580,6 @@ a {
   color: var(--text-dim);
 }
 
-.due {
-  color: var(--accent);
-  font-size: 13px;
-}
-
 .toggle-line {
   margin: 0 0 12px;
 }

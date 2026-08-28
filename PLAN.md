@@ -34,7 +34,7 @@ audio finalize in GCS fires **Eventarc → agent turn**: Gemini (audio-native, n
 STT service) produces transcript + summary + tags + action items in one
 structured call; tools write notes/tasks back to Firestore. Cloud Scheduler
 drives two **routines** as real agent sessions (Horizon fire-path pattern):
-daily task review (nag, staleness, due dates) and nightly digest (consolidation
+daily task review (nag, staleness) and nightly digest (consolidation
 over the Firestore corpus — our "dreaming", fully inspectable). Consequential
 actions (calendar/email drafts) queue as **pending approvals** the UI resurfaces
 (Horizon HITL pattern, scoped down). Memory Bank is optional garnish behind an

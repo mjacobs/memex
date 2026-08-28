@@ -17,7 +17,7 @@ def test_enrichment_result_round_trips() -> None:
         transcript="call the plumber by friday",
         summary="Call the plumber.",
         tags=["home", "errands"],
-        action_items=[ActionItem(title="Call the plumber", due_hint="by friday")],
+        action_items=[ActionItem(title="Call the plumber")],
     )
     parsed = EnrichmentResult.model_validate_json(original.model_dump_json())
     assert parsed == original
@@ -32,4 +32,4 @@ def test_enrichment_result_parses_model_style_json() -> None:
         "action_items": [{"title": "Ship the demo"}],
     }
     result = EnrichmentResult.model_validate(payload)
-    assert result.action_items[0].due_hint is None
+    assert result.action_items[0].title == "Ship the demo"

@@ -10,7 +10,7 @@ Verified facts this contract sits on (all proved 2026-08-27 against project
 - `gemini-3.5-flash` on Vertex (location `global`) accepts **inline m4a audio**
   (`Part.from_bytes`, `mime_type="audio/mp4"`) plus a prompt, and honors
   `response_json_schema` — one call returned
-  `{transcript, summary, tags[], action_items[{title, due_hint?}]}` correctly.
+  `{transcript, summary, tags[], action_items[{title}]}` correctly.
   No separate STT service.
 - Vertex model roster includes `gemini-3.5-flash` (our default; override with
   `MEMEX_MODEL`).
@@ -90,8 +90,6 @@ The feed. Both enriched captures and routine output.
 | `status`         | `"open" \| "done" \| "dropped"`             |                           |
 | `created_at`     | timestamp                                   |                           |
 | `updated_at`     | timestamp                                   | touch on every mutation   |
-| `due_hint?`      | string                                      | verbatim ("by Friday")    |
-| `due_at?`        | timestamp                                   | resolved by the agent when confident |
 | `tags`           | string[]                                    |                           |
 | `source_note_id?`| ulid                                        |                           |
 
@@ -113,8 +111,8 @@ HITL queue. Launch scope: task mutations only.
 **Action** (discriminated on `type`):
 
 ```json
-{"type": "task_update", "task_id": "…", "changes": {"status?": "…", "title?": "…", "due_at?": "…", "tags?": []}}
-{"type": "task_create", "task": {"title": "…", "due_hint?": "…", "tags?": []}}
+{"type": "task_update", "task_id": "…", "changes": {"status?": "…", "title?": "…", "tags?": []}}
+{"type": "task_create", "task": {"title": "…", "tags?": []}}
 ```
 
 Approving applies the action server-side in the same request, then sets
@@ -166,7 +164,7 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event |
 | `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete      |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |
-| `PATCH /api/v1/tasks/{id}`           | `{"status?", "title?", "due_at?", "tags?"}`        | `200 {task}`                               |
+| `PATCH /api/v1/tasks/{id}`           | `{"status?", "title?", "tags?"}`                   | `200 {task}`                               |
 | `GET /api/v1/approvals`              | `?status=pending` (default pending)                | `200 {approvals: […]}`                     |
 | `POST /api/v1/approvals/{id}/approve`|                                                    | `200 {approval}` (applied)                 |
 | `POST /api/v1/approvals/{id}/reject` |                                                    | `200 {approval}`                           |
@@ -198,7 +196,7 @@ def create_note(kind: str, body: str, summary: str, tags: list[str],
                 routine_run_id: str | None = None) -> dict  # {note_id}
 
 def create_tasks(tasks: list[dict], source_note_id: str) -> dict
-    # tasks: [{title, due_hint?, due_at?, tags?}] → {task_ids: […]}
+    # tasks: [{title, tags?}] → {task_ids: […]}
 
 def list_tasks(status: str = "open", limit: int = 100) -> dict  # {tasks}
 
@@ -218,7 +216,7 @@ records the call.
 
 Routine prompts (W3-owned, shapes fixed):
 
-- `daily_review`: reads open tasks (`list_tasks`), flags stale/due items,
+- `daily_review`: reads open tasks (`list_tasks`), flags stale items,
   queues `task_update` approvals via `queue_approval`, writes a `review` note
   (`create_note`) summarizing.
 - `nightly_digest`: reads the last 24 h of notes (`list_recent_notes`),

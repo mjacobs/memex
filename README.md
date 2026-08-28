@@ -21,7 +21,7 @@ entirely on Google Cloud with everything scaled to zero when idle.
   multi-step Gemini tool loop over the note/task corpus, and each run's
   complete trace is stored and replayable in the UI.
 - **Human in the loop.** Routines don't mutate your tasks. They queue
-  approvals ("drop these five duplicate tasks", "set this due date") that you
+  approvals ("drop these five duplicate tasks") that you
   accept or reject in the web UI; only an accepted approval applies the
   change.
 

@@ -39,14 +39,13 @@ def test_create_tasks_links_source_note() -> None:
         kind="capture", body="b", summary="s", tags=[]
     )["note_id"]
     out = tools.create_tasks(
-        [{"title": "buy milk", "due_hint": "by friday"}, {"title": "call mom"}],
+        [{"title": "buy milk"}, {"title": "call mom"}],
         source_note_id=note_id,
     )
     assert len(out["task_ids"]) == 2
     task = store.get(Task, out["task_ids"][0])
     assert task is not None
     assert task.title == "buy milk"
-    assert task.due_hint == "by friday"
     assert task.status == "open"
     assert task.source_note_id == note_id
     note = store.get(Note, note_id)

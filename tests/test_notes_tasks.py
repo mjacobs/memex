@@ -220,10 +220,14 @@ def test_patch_task_invalid_value_400_not_500(client, fs):
     assert r.json()["error"]["code"] == "invalid_patch"
 
 
-def test_patch_task_can_clear_due_at(client, fs):
-    task = _make_task("clearable due date")
+def test_patch_task_ignores_unknown_fields(client, fs):
+    task = _make_task("no due date field anymore")
     r = client.patch(
-        f"/api/v1/tasks/{task.id}", json={"due_at": None}, headers=AUTH
+        f"/api/v1/tasks/{task.id}",
+        json={"due_at": "2026-01-01T00:00:00Z", "title": "kept"},
+        headers=AUTH,
     )
     assert r.status_code == 200
-    assert r.json()["task"]["due_at"] is None
+    body = r.json()["task"]
+    assert body["title"] == "kept"
+    assert "due_at" not in body

@@ -63,8 +63,6 @@ class Task(BaseModel):
     status: TaskStatus = "open"
     created_at: datetime
     updated_at: datetime
-    due_hint: str | None = None
-    due_at: datetime | None = None
     tags: list[str] = Field(default_factory=list)
     source_note_id: str | None = None
 
@@ -117,4 +115,3 @@ class EnrichmentResult(BaseModel):
 
 class ActionItem(BaseModel):
     title: str
-    due_hint: str | None = None

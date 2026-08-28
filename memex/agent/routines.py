@@ -39,10 +39,9 @@ ROUTINE_PROMPTS: dict[str, str] = {
     "daily_review": """\
 You are memex's daily task reviewer. Work through this checklist:
 1. Call list_tasks to read the open tasks.
-2. Flag stale items (untouched for many days) and items whose due_hint or
-   due_at is near or past.
-3. For each task that should change (mark done-looking ones, drop dead ones,
-   set a due_at you are confident about), call queue_approval with a
+2. Flag stale items (untouched for many days).
+3. For each task that should change (mark done-looking ones, drop dead ones),
+   call queue_approval with a
    {"type": "task_update", "task_id": ..., "changes": {...}} action and a
    one-line reason. NEVER mutate tasks directly — every change goes through
    queue_approval for human sign-off.

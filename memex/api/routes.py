@@ -1,6 +1,5 @@
 """/api/v1 routes per docs/contracts.md. All Firestore access via the store."""
 
-from datetime import datetime
 from typing import get_args
 
 import anyio.to_thread
@@ -241,7 +240,6 @@ def list_tasks(status: str = "open") -> dict:
 class TaskPatch(BaseModel):
     status: TaskStatus | None = None
     title: str | None = None
-    due_at: datetime | None = None
     tags: list[str] | None = None
 
 
@@ -249,7 +247,7 @@ def _apply_task_changes(task_id: str, changes: dict) -> Task:
     task = store.get(Task, task_id)
     if task is None:
         raise ApiError(404, "not_found", f"task {task_id} not found")
-    allowed = {"status", "title", "due_at", "tags"}
+    allowed = {"status", "title", "tags"}
     try:
         patch = TaskPatch.model_validate(
             {k: v for k, v in changes.items() if k in allowed}
@@ -260,7 +258,7 @@ def _apply_task_changes(task_id: str, changes: dict) -> Task:
         ) from exc
     updates = patch.model_dump(exclude_unset=True)
     # Explicit nulls would corrupt required Task fields in Firestore and make
-    # the doc unreadable; only due_at may be cleared.
+    # the doc unreadable.
     for field in ("status", "title", "tags"):
         if field in updates and updates[field] is None:
             raise ApiError(400, "invalid_patch", f"{field} cannot be null")
@@ -311,8 +309,6 @@ def approve(approval_id: str) -> dict:
                 title=title,
                 created_at=store.now(),
                 updated_at=store.now(),
-                due_at=spec.get("due_at"),
-                due_hint=spec.get("due_hint"),
                 tags=spec.get("tags") or [],
             )
         except ValidationError as exc:
