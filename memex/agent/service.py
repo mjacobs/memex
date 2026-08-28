@@ -11,6 +11,7 @@ call them from FastAPI path functions declared with plain `def`, or via
 
 import asyncio
 import logging
+import re
 from datetime import timedelta
 
 from google.cloud import storage
@@ -32,12 +33,26 @@ READ_LATER_TAG = "read-later"
 _MD_ESCAPE = str.maketrans({c: f"\\{c}" for c in "\\`*_[]<>"})
 
 
+# A line opening with one of these is a heading, quote, list, or rule, and
+# transcribed text opens lines that way all the time — "- buy milk", "1. run
+# the migration", "# TODO".
+_MD_BLOCK_START = re.compile(r"^([ \t]*)([#>+=~-]|\d+[.)])", re.MULTILINE)
+
+
+def _escape_block_start(m: re.Match[str]) -> str:
+    indent, marker = m.group(1), m.group(2)
+    if marker[0].isdigit():  # "1." escapes on the dot, not the digit
+        return f"{indent}{marker[:-1]}\\{marker[-1]}"
+    return f"{indent}\\{marker}"
+
+
 def _md_text(text: str) -> str:
     """Prose dropped into a body the app composes — a screenshot description,
     the caption typed with it. It is content, not markup: a screenshot of code
     reading "List<T>" must survive to the page, where the sanitizer would
-    otherwise drop it as an unknown tag. Line structure is left alone."""
-    return text.translate(_MD_ESCAPE)
+    otherwise drop it as an unknown tag, and a transcribed "# TODO" must stay
+    a line of text rather than becoming a heading."""
+    return _MD_BLOCK_START.sub(_escape_block_start, text.translate(_MD_ESCAPE))
 
 
 def _md_label(text: str) -> str:

@@ -116,6 +116,27 @@ def test_code_in_a_screenshot_survives_into_the_body(fs, monkeypatch):
     )
 
 
+def test_a_transcribed_list_stays_text(fs, monkeypatch):
+    """Screenshots of to-do lists and notes are the common case; their lines
+    must not turn into markdown headings and bullets."""
+    from memex.agent import service
+    from memex.models import EnrichmentResult
+
+    described = EnrichmentResult(
+        transcript="# TODO\n- buy milk\n1. run it",
+        summary="A list.",
+        tags=["lists"],
+        action_items=[],
+    )
+    cap = _image_capture()
+    monkeypatch.setattr(service, "_download_gcs", lambda uri: IMAGE)
+    monkeypatch.setattr(service, "enrich_image", lambda *a, **k: described)
+
+    out = service.enrich_capture(cap.id)
+
+    assert out["note"]["body"] == "\\# TODO\n\\- buy milk\n1\\. run it"
+
+
 def test_enrich_image_without_uri_fails_capture(fs, monkeypatch):
     from memex.agent import service
 
