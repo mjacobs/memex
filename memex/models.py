@@ -10,9 +10,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 CaptureSource = Literal["ios", "desktop", "web", "api"]
-CaptureKind = Literal["text", "audio", "image"]
+CaptureKind = Literal["text", "audio", "image", "link"]
 CaptureStatus = Literal["pending", "processing", "enriched", "failed"]
-NoteKind = Literal["capture", "digest", "review"]
+NoteKind = Literal["capture", "digest", "review", "link"]
 TaskStatus = Literal["open", "done", "dropped"]
 ApprovalStatus = Literal["pending", "approved", "rejected"]
 RoutineName = Literal["daily_review", "nightly_digest"]
@@ -34,14 +34,19 @@ class Capture(BaseModel):
     source: CaptureSource = "api"
     device_id: str
     kind: CaptureKind
+    # kind=text: the captured text. kind=link: the optional user note, if any.
     text: str | None = None
+    # kind=link only: the saved page URL — never fetched server-side
+    # (see docs/contracts.md).
+    url: str | None = None
+    # kind=image/link: page title as the client reported it.
+    title: str | None = None
     audio_gcs_uri: str | None = None
     audio_mime: str | None = None
     image_gcs_uri: str | None = None
     image_mime: str | None = None
     # Provenance for kind=image: the page the screenshot was taken from.
     source_url: str | None = None
-    title: str | None = None
     status: CaptureStatus
     processing_at: datetime | None = None  # set when an enrichment run claims it
     error: str | None = None

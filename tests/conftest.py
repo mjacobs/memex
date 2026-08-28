@@ -71,14 +71,18 @@ def agent_stub(monkeypatch):
         calls["enrich"].append(capture_id)
         capture = store.get(Capture, capture_id)
         assert capture is not None
+        if capture.kind == "link":
+            body = f"[{capture.title or capture.url}]({capture.url})"
+        else:
+            body = capture.text or "(audio)"
         note = Note(
             id=new_ulid(),
             created_at=store.now(),
-            kind="capture",
+            kind="link" if capture.kind == "link" else "capture",
             capture_id=capture_id,
-            body=capture.text or "(audio)",
+            body=body,
             summary="stub summary",
-            tags=["stub"],
+            tags=["read-later", "stub"] if capture.kind == "link" else ["stub"],
         )
         task = Task(
             id=new_ulid(),

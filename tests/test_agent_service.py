@@ -65,6 +65,55 @@ def test_enrich_capture_text_happy_path(monkeypatch: pytest.MonkeyPatch) -> None
     assert task is not None and task.source_note_id == note.id
 
 
+def test_enrich_capture_link_writes_markdown_link_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memex.agent import service
+
+    cap = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        source="api",
+        device_id="dev",
+        kind="link",
+        url="https://example.com/pinning",
+        title="Pinning",
+        text="before touching the executor",
+        status="pending",
+    )
+    store.put(cap)
+    canned = EnrichmentResult(
+        transcript="A chapter about pinning.",
+        summary="Read the pinning chapter before touching the executor.",
+        tags=["rust"],
+        action_items=[],
+    )
+    seen: dict = {}
+
+    def fake_enrich_link(url, title, note):
+        seen.update(url=url, title=title, note=note)
+        return canned
+
+    monkeypatch.setattr(service, "enrich_link", fake_enrich_link)
+
+    out = service.enrich_capture(cap.id)
+
+    assert "error" not in out
+    assert seen == {
+        "url": "https://example.com/pinning",
+        "title": "Pinning",
+        "note": "before touching the executor",
+    }
+    note = out["note"]
+    assert note["kind"] == "link"
+    # First line is a clickable markdown link; the user's note follows.
+    assert note["body"].splitlines()[0] == "[Pinning](https://example.com/pinning)"
+    assert "before touching the executor" in note["body"]
+    assert note["transcript"] is None
+    # read-later is always present, and the model's own tags are kept.
+    assert note["tags"] == ["read-later", "rust"]
+
+
 def test_enrich_capture_failure_marks_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     from memex.agent import service
 

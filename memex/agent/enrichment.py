@@ -60,8 +60,7 @@ Return JSON with:
   deploy"), never distant third person ("The user captured...").
 - tags: 1-5 lowercase kebab-case topic tags.
 - action_items: concrete to-dos the screenshot or the user's own note asks
-  for, each with a short imperative title and, when a time reference is given,
-  its verbatim wording as due_hint. Empty list if none.
+  for, each with a short imperative title. Empty list if none.
 Do not invent content that is not in the image.
 """
 
@@ -78,6 +77,27 @@ def _image_context(
     if source_url:
         lines.append(f"Page URL: {source_url}")
     return ("\n" + "\n".join(lines) + "\n") if lines else ""
+
+
+_INSTRUCTION_LINK = """\
+You are memex, a personal capture assistant. Your user saved a web page to read
+later. You are given only its URL, the page title their browser reported, and
+an optional note they typed — the page itself was NOT fetched, so reason from
+those alone and never claim to know the page's contents.
+
+Return JSON with:
+- transcript: one short sentence describing what the page most likely is, based
+  on the URL and title (e.g. "Rust async book chapter on pinning"). Say
+  "Unclear from the URL" if the URL and title give you nothing.
+- summary: one or two sentences on why this is worth reading later. Write it the
+  way the user would jot it for themselves — direct and first-person-implied
+  ("Read the pinning chapter before touching the executor"), never distant third
+  person ("The user saved a page about...").
+- tags: 1-5 lowercase kebab-case topic tags drawn from the URL, title, and note.
+- action_items: only if the user's note actually asks for something concrete
+  beyond reading the page. Reading it is not an action item. Usually empty.
+Do not invent facts about the page's contents.
+"""
 
 
 @lru_cache
@@ -123,6 +143,23 @@ def enrich_image(
             types.Part.from_bytes(data=image, mime_type=mime_type),
             _INSTRUCTION_IMAGE + _image_context(caption, source_url, title),
         ],
+        config=_config(),
+    )
+    return EnrichmentResult.model_validate_json(response.text)
+
+
+def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResult:
+    """Enrich a saved link from its URL/title/note alone.
+
+    The page is deliberately never fetched: the server must not issue requests
+    to arbitrary URLs a client hands it.
+    """
+    parts = [f"URL: {url}", f"Page title: {title or '(none reported)'}"]
+    if note and note.strip():
+        parts.append(f"User's note: {note.strip()}")
+    response = _client().models.generate_content(
+        model=settings().model,
+        contents=[_INSTRUCTION_LINK, "\n".join(parts)],
         config=_config(),
     )
     return EnrichmentResult.model_validate_json(response.text)

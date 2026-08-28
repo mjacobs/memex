@@ -17,13 +17,35 @@ from google.cloud import storage
 
 from memex.agent import routines as routines_mod
 from memex.agent import tools
-from memex.agent.enrichment import enrich_audio, enrich_image, enrich_text
+from memex.agent.enrichment import enrich_audio, enrich_image, enrich_link, enrich_text
 from memex.config import settings
 from memex.ids import new_ulid
 from memex.models import Capture, Note, RoutineRun, Task, TraceEvent
 from memex.store import firestore as store
 
 logger = logging.getLogger(__name__)
+
+
+READ_LATER_TAG = "read-later"
+
+
+def _link_body(capture: Capture) -> str:
+    """Markdown body for a link capture: the clickable link on line one.
+
+    Built in code rather than asked of the model, so the note the SPA renders
+    always leads with a working link to the saved page.
+    """
+    label = (capture.title or "").strip() or capture.url or ""
+    # A "]" in the title would close the markdown link early.
+    label = label.replace("[", "(").replace("]", ")")
+    body = f"[{label}]({capture.url})"
+    note = (capture.text or "").strip()
+    return f"{body}\n\n{note}" if note else body
+
+
+def _link_tags(tags: list[str]) -> list[str]:
+    """Guarantee the read-later tag so saved links stay filterable."""
+    return tags if READ_LATER_TAG in tags else [READ_LATER_TAG, *tags]
 
 
 def _download_gcs(gcs_uri: str) -> bytes:
@@ -120,6 +142,17 @@ def enrich_capture(capture_id: str) -> dict:
                 source_url=capture.source_url,
                 title=capture.title,
             )
+        elif capture.kind == "link":
+            if not capture.url:
+                raise ValueError("link capture has no url")
+            trace.append(
+                TraceEvent(
+                    t=store.now(),
+                    role="user",
+                    text=f"[link capture {capture.url} ({capture.title or 'untitled'})]",
+                )
+            )
+            result = enrich_link(capture.url, capture.title, capture.text)
         else:
             if capture.text is None:
                 raise ValueError("text capture has no text")
@@ -136,21 +169,23 @@ def enrich_capture(capture_id: str) -> dict:
             )
         )
 
+        if capture.kind == "link":
+            body = _link_body(capture)
+        elif capture.kind == "text":
+            body = capture.text
+        elif capture.kind == "image":
+            body = _image_note_body(capture, result.transcript)
+        else:
+            body = result.transcript
         note = Note(
             id=new_ulid(),
             created_at=store.now(),
-            kind="capture",
+            kind="link" if capture.kind == "link" else "capture",
             capture_id=capture.id,
             transcript=result.transcript if capture.kind == "audio" else None,
-            body=(
-                capture.text
-                if capture.kind == "text"
-                else _image_note_body(capture, result.transcript)
-                if capture.kind == "image"
-                else result.transcript
-            ),
+            body=body,
             summary=result.summary,
-            tags=result.tags,
+            tags=_link_tags(result.tags) if capture.kind == "link" else result.tags,
             trace=trace,
         )
         store.put(note)
