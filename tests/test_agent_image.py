@@ -93,6 +93,29 @@ def test_enrich_image_without_metadata_is_just_the_description(fs, monkeypatch):
     assert out["note"]["body"] == CANNED.transcript
 
 
+def test_code_in_a_screenshot_survives_into_the_body(fs, monkeypatch):
+    """A screenshot of code is the common case, and the body is markdown the
+    app composes — "List<T>" must reach the page, not the sanitizer's floor."""
+    from memex.agent import service
+    from memex.models import EnrichmentResult
+
+    described = EnrichmentResult(
+        transcript="The signature reads List<T> map(*args) _slowly_.",
+        summary="A generic signature.",
+        tags=["code"],
+        action_items=[],
+    )
+    cap = _image_capture()
+    monkeypatch.setattr(service, "_download_gcs", lambda uri: IMAGE)
+    monkeypatch.setattr(service, "enrich_image", lambda *a, **k: described)
+
+    out = service.enrich_capture(cap.id)
+
+    assert out["note"]["body"] == (
+        r"The signature reads List\<T\> map(\*args) \_slowly\_."
+    )
+
+
 def test_enrich_image_without_uri_fails_capture(fs, monkeypatch):
     from memex.agent import service
 

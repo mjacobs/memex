@@ -32,6 +32,14 @@ READ_LATER_TAG = "read-later"
 _MD_ESCAPE = str.maketrans({c: f"\\{c}" for c in "\\`*_[]<>"})
 
 
+def _md_text(text: str) -> str:
+    """Prose dropped into a body the app composes — a screenshot description,
+    the caption typed with it. It is content, not markup: a screenshot of code
+    reading "List<T>" must survive to the page, where the sanitizer would
+    otherwise drop it as an unknown tag. Line structure is left alone."""
+    return text.translate(_MD_ESCAPE)
+
+
 def _md_label(text: str) -> str:
     """Link text taken off a web page. It is data, not markup: a newline would
     end the paragraph and let the title add its own headings, brackets would
@@ -60,7 +68,7 @@ def _link_body(capture: Capture) -> str:
     url = capture.url or ""
     label = _md_label(capture.title or "") or _md_label(url)
     body = f"[{label}]({_md_url(url)})"
-    note = (capture.text or "").strip()
+    note = _md_text((capture.text or "").strip())
     return f"{body}\n\n{note}" if note else body
 
 
@@ -79,9 +87,9 @@ def _download_gcs(gcs_uri: str) -> bytes:
 
 def _image_note_body(capture: Capture, description: str) -> str:
     """Markdown body for a screenshot note: what's in it, then provenance."""
-    parts = [description]
+    parts = [_md_text(description)]
     if capture.text:
-        parts.append(f"**Note:** {capture.text}")
+        parts.append(f"**Note:** {_md_text(capture.text)}")
     if capture.source_url:
         label = _md_label(capture.title or "") or _md_label(capture.source_url)
         parts.append(f"Source: [{label}]({_md_url(capture.source_url)})")
