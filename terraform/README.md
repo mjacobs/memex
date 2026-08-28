@@ -46,7 +46,11 @@ gcloud run deploy memex --project m4tt-xyz --region us-central1 \
 ### 3. Add device keys (out of band, required before first use)
 
 Terraform creates the `memex-device-keys` secret but no version — keys never
-touch terraform state. Add one:
+touch terraform state. On a **fresh project**, add a version before the first
+full apply reaches the Cloud Run service (the container reads the `latest`
+version at startup, so a revision deployed against a version-less secret
+fails to start; if that happens, add the version and re-apply/redeploy). Add
+one:
 
 ```sh
 echo -n '{"dev": "<long-random-key>"}' | \

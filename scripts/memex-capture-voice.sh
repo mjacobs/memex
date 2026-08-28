@@ -73,17 +73,24 @@ device_key() {
 }
 
 post_audio() {
-  local file="$1" mime="$2" response
+  local file="$1" mime="$2" response header_file
+  # The key must not appear in argv (visible in /proc); curl reads the
+  # header from a 0600 file instead.
+  header_file=$(umask 077 && mktemp -p "$RUNTIME_DIR" memex-hdr.XXXXXX)
+  printf 'Authorization: Bearer %s\n' "$(device_key)" > "$header_file"
+  local rc=0
   response=$(
     curl -sS --fail-with-body -X POST "$MEMEX_URL/api/v1/capture/audio" \
-      -H "Authorization: Bearer $(device_key)" \
+      -H "@$header_file" \
       -H "Content-Type: $mime" \
       -H "X-Memex-Source: desktop" \
       --data-binary "@$file" 2>&1
-  ) || {
+  ) || rc=$?
+  rm -f "$header_file"
+  if ((rc != 0)); then
     notify_err "memex capture failed: $response"
     exit 1
-  }
+  fi
   local capture_id
   capture_id=$(printf '%s' "$response" | jq -r '.id // "?"')
   notify_ok "captured ($capture_id) — enriching in the cloud"

@@ -161,3 +161,17 @@ def test_internal_oidc_claims_checks(client, monkeypatch, agent_stub):
     claims["aud"] = "https://memex-123.us-central1.run.app"
     claims["email"] = "memex-trigger@p.iam.gserviceaccount.com"
     assert client.post(tick, headers=hdr).status_code == 200
+
+
+def test_routine_tick_failed_run_returns_500(client, monkeypatch, fs):
+    """A failed routine must surface non-2xx so Cloud Scheduler retries."""
+    import sys
+    import types as types_mod
+
+    module = types_mod.ModuleType("memex.agent.service")
+    module.run_routine = lambda routine: {"status": "failed", "error": "boom"}
+    monkeypatch.setitem(sys.modules, "memex.agent.service", module)
+
+    r = client.post("/internal/routines/daily_review/tick")
+    assert r.status_code == 500
+    assert r.json()["error"]["code"] == "routine_failed"

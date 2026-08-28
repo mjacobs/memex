@@ -61,4 +61,9 @@ def tick(routine: str) -> dict:
         raise ApiError(
             503, "agent_unavailable", "routine agent is not available"
         ) from exc
-    return run_routine(routine)
+    result = run_routine(routine)
+    if result.get("status") == "failed":
+        # Non-2xx so Cloud Scheduler's retry policy actually fires; the failed
+        # RoutineRun is already persisted for the UI.
+        raise ApiError(500, "routine_failed", result.get("error") or "routine failed")
+    return result
