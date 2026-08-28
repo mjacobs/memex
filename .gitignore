@@ -10,3 +10,4 @@ terraform/.terraform/
 terraform/*.tfstate*
 terraform/*.tfvars
 .env
+.kata.local.toml
