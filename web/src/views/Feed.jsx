@@ -44,16 +44,23 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     return t ? new Set(t.split(",").filter(Boolean)) : new Set();
   });
 
+  // Sorted, so the effect re-runs on a real change of filter, not on reorder.
+  const tagKey = [...selectedTags].sort().join(",");
+
   useEffect(() => {
     let alive = true;
+    // Filtering has to reach past the newest 50 notes, or a tag whose notes
+    // are all older than that reads as "no matches". The API filters on one
+    // tag server-side; any others are intersected below.
+    const tags = tagKey ? tagKey.split(",") : [];
     api
-      .listNotes({ limit: 50 })
+      .listNotes(tags.length > 0 ? { limit: 50, tag: tags[0] } : { limit: 50 })
       .then((d) => alive && setNotes(d.notes))
       .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [refreshToken]);
+  }, [refreshToken, tagKey]);
 
   const toggleTag = (tag) => {
     setSelectedTags((prev) => {
