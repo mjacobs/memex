@@ -5,6 +5,7 @@ OIDC-verified (see auth.verify_internal); delegates to the W3 agent seam.
 
 from typing import get_args
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, Request
 
 from memex.api.auth import verify_internal
@@ -45,7 +46,9 @@ async def enrich(request: Request) -> dict:
         raise ApiError(
             503, "agent_unavailable", "enrichment agent is not available"
         ) from exc
-    return enrich_capture(capture_id)
+    # enrich_capture is synchronous (GCS + Gemini + Firestore); keep it off
+    # the event loop so /health and other requests stay responsive.
+    return await anyio.to_thread.run_sync(enrich_capture, capture_id)
 
 
 @router.post("/routines/{routine}/tick")

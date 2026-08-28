@@ -11,6 +11,7 @@ call them from FastAPI path functions declared with plain `def`, or via
 
 import asyncio
 import logging
+from datetime import timedelta
 
 from google.cloud import storage
 
@@ -39,6 +40,30 @@ def enrich_capture(capture_id: str) -> dict:
     capture = store.get(Capture, capture_id)
     if capture is None:
         return {"capture": None, "note": None, "tasks": [], "error": f"capture {capture_id} not found"}
+
+    # Eventarc delivery is at-least-once: a redelivered finalize event must
+    # not re-enrich (duplicate notes/tasks). "processing" younger than 30
+    # minutes is an in-flight run; older is treated as crashed and retried.
+    if capture.status == "enriched" and capture.note_id:
+        note = store.get(Note, capture.note_id)
+        tasks = (
+            [t for tid in note.task_ids if (t := store.get(Task, tid))] if note else []
+        )
+        return {
+            "capture": capture.model_dump(mode="json"),
+            "note": note.model_dump(mode="json") if note else None,
+            "tasks": [t.model_dump(mode="json") for t in tasks],
+            "deduped": True,
+        }
+    if capture.status == "processing" and store.now() - capture.created_at < timedelta(
+        minutes=30
+    ):
+        return {
+            "capture": capture.model_dump(mode="json"),
+            "note": None,
+            "tasks": [],
+            "in_progress": True,
+        }
 
     store.update(Capture, capture_id, {"status": "processing"})
     capture.status = "processing"

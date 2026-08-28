@@ -108,3 +108,33 @@ def test_patch_task_404_and_empty(client, fs):
     r = client.patch(f"/api/v1/tasks/{task.id}", json={}, headers=AUTH)
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "empty_update"
+
+
+def test_patch_task_rejects_null_required_fields(client, fs):
+    task = _make_task("keep me intact")
+    r = client.patch(
+        f"/api/v1/tasks/{task.id}", json={"status": None, "title": None}, headers=AUTH
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_patch"
+    # the doc is untouched and still readable
+    r2 = client.get("/api/v1/tasks", headers=AUTH)
+    assert any(t["id"] == task.id for t in r2.json()["tasks"])
+
+
+def test_patch_task_invalid_value_400_not_500(client, fs):
+    task = _make_task("status stays valid")
+    r = client.patch(
+        f"/api/v1/tasks/{task.id}", json={"status": "closed"}, headers=AUTH
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_patch"
+
+
+def test_patch_task_can_clear_due_at(client, fs):
+    task = _make_task("clearable due date")
+    r = client.patch(
+        f"/api/v1/tasks/{task.id}", json={"due_at": None}, headers=AUTH
+    )
+    assert r.status_code == 200
+    assert r.json()["task"]["due_at"] is None

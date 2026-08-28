@@ -12,6 +12,11 @@ def _client():
     return storage.Client(project=settings().project)
 
 
+def audio_uri(capture_id: str, ext: str) -> str:
+    """Deterministic URI for a capture's audio object."""
+    return f"gs://{settings().audio_bucket}/captures/{capture_id}.{ext}"
+
+
 def upload_audio(capture_id: str, ext: str, data: bytes, content_type: str) -> str:
     """Upload raw audio to gs://<bucket>/captures/<capture_id>.<ext>; return URI."""
     bucket_name = settings().audio_bucket

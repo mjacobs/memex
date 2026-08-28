@@ -5,10 +5,15 @@
   (verification skipped when service_url is empty — local dev).
 """
 
+import hmac
+import logging
+
 from fastapi import Request
 
 from memex.api.common import ApiError
 from memex.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _bearer_token(request: Request) -> str:
@@ -22,9 +27,14 @@ def _bearer_token(request: Request) -> str:
 def require_device(request: Request) -> str:
     """FastAPI dependency: resolve the bearer key to a device_id."""
     token = _bearer_token(request)
+    matched: str | None = None
     for device_id, key in settings().device_keys.items():
-        if key == token:
-            return device_id
+        # Constant-time compare, and check every key regardless of match, to
+        # avoid a timing oracle on the only public gate.
+        if hmac.compare_digest(key.encode(), token.encode()):
+            matched = device_id
+    if matched is not None:
+        return matched
     raise ApiError(401, "unauthorized", "unknown device key")
 
 
@@ -42,8 +52,17 @@ def verify_internal(request: Request) -> dict:
       invoker service accounts (Eventarc trigger / Cloud Scheduler).
     """
     cfg = settings()
-    if not cfg.service_url:  # local dev
-        return {}
+    if not cfg.service_url:
+        # Auth must never silently disappear because an env var went missing:
+        # skipping verification requires the explicit local-dev opt-in.
+        if cfg.insecure_local:
+            return {}
+        raise ApiError(
+            503,
+            "misconfigured",
+            "MEMEX_SERVICE_URL is not set (set it, or MEMEX_INSECURE_LOCAL=1 "
+            "for local dev)",
+        )
     token = _bearer_token(request)
     if token.count(".") != 2:  # device keys / junk are not JWTs; skip cert fetch
         raise ApiError(401, "unauthorized", "expected a Google-signed OIDC token")
@@ -63,7 +82,8 @@ def verify_internal(request: Request) -> dict:
     except ApiError:
         raise
     except Exception as exc:
-        raise ApiError(401, "unauthorized", f"OIDC verification failed: {exc}") from exc
+        logger.warning("OIDC verification failed: %s", exc)
+        raise ApiError(401, "unauthorized", "OIDC verification failed") from exc
     if claims.get("aud") not in allowed_audiences:
         raise ApiError(401, "unauthorized", "OIDC audience mismatch")
     if not claims.get("email_verified") or claims.get("email") not in cfg.internal_invokers:

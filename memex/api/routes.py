@@ -3,8 +3,9 @@
 from datetime import datetime
 from typing import get_args
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from memex.api import gcs
 from memex.api.auth import require_device
@@ -66,16 +67,19 @@ def capture_text(body: CaptureIn, device_id: str = Depends(require_device)) -> d
         device_id=device_id,
         kind="text",
         text=body.text,
-        status="processing",
+        status="pending",
     )
     store.put(capture)
     try:
-        _enrich(capture.id)
+        result = _enrich(capture.id)
     except ApiError:
         raise
     except Exception as exc:
         store.update(Capture, capture.id, {"status": "failed", "error": str(exc)})
         raise ApiError(502, "enrichment_failed", str(exc)) from exc
+    if result.get("error"):
+        # enrich_capture reports failures in the result rather than raising.
+        raise ApiError(502, "enrichment_failed", result["error"])
     capture = store.get(Capture, capture.id) or capture
     note = store.get(Note, capture.note_id) if capture.note_id else None
     tasks: list[Task] = []
@@ -103,19 +107,29 @@ async def capture_audio(
     data = await request.body()
     if not data:
         raise ApiError(400, "empty_body", "audio body must be non-empty")
+    if len(data) > 25 * 1024 * 1024:
+        raise ApiError(413, "payload_too_large", "audio body exceeds 25 MiB")
     capture_id = new_ulid()
-    uri = gcs.upload_audio(capture_id, ext, data, content_type)
+    # Capture doc first: the GCS finalize event races Eventarc against this
+    # write, and /internal/enrich 404s if the doc isn't there yet.
     capture = Capture(
         id=capture_id,
         created_at=store.now(),
         source=_source(request.headers.get("x-memex-source")),
         device_id=device_id,
         kind="audio",
-        audio_gcs_uri=uri,
+        audio_gcs_uri=gcs.audio_uri(capture_id, ext),
         audio_mime=content_type,
         status="pending",
     )
-    store.put(capture)
+    await anyio.to_thread.run_sync(store.put, capture)
+    try:
+        await anyio.to_thread.run_sync(
+            gcs.upload_audio, capture_id, ext, data, content_type
+        )
+    except Exception as exc:
+        store.update(Capture, capture_id, {"status": "failed", "error": str(exc)})
+        raise ApiError(502, "upload_failed", "audio upload failed") from exc
     return {"id": capture_id}
 
 
@@ -171,8 +185,20 @@ def _apply_task_changes(task_id: str, changes: dict) -> Task:
     if task is None:
         raise ApiError(404, "not_found", f"task {task_id} not found")
     allowed = {"status", "title", "due_at", "tags"}
-    patch = TaskPatch.model_validate({k: v for k, v in changes.items() if k in allowed})
+    try:
+        patch = TaskPatch.model_validate(
+            {k: v for k, v in changes.items() if k in allowed}
+        )
+    except ValidationError as exc:
+        raise ApiError(
+            400, "invalid_patch", str(exc.errors(include_url=False))
+        ) from exc
     updates = patch.model_dump(exclude_unset=True)
+    # Explicit nulls would corrupt required Task fields in Firestore and make
+    # the doc unreadable; only due_at may be cleared.
+    for field in ("status", "title", "tags"):
+        if field in updates and updates[field] is None:
+            raise ApiError(400, "invalid_patch", f"{field} cannot be null")
     if not updates:
         raise ApiError(400, "empty_update", "no updatable fields given")
     updates["updated_at"] = store.now()
@@ -214,14 +240,20 @@ def approve(approval_id: str) -> dict:
         title = str(spec.get("title", "")).strip()
         if not title:
             raise ApiError(400, "invalid_action", "task_create requires a title")
-        task = Task(
-            id=new_ulid(),
-            title=title,
-            created_at=store.now(),
-            updated_at=store.now(),
-            due_hint=spec.get("due_hint"),
-            tags=spec.get("tags") or [],
-        )
+        try:
+            task = Task(
+                id=new_ulid(),
+                title=title,
+                created_at=store.now(),
+                updated_at=store.now(),
+                due_at=spec.get("due_at"),
+                due_hint=spec.get("due_hint"),
+                tags=spec.get("tags") or [],
+            )
+        except ValidationError as exc:
+            raise ApiError(
+                400, "invalid_action", str(exc.errors(include_url=False))
+            ) from exc
         store.put(task)
         result = f"created task {task.id}"
     else:  # pragma: no cover — action union is closed

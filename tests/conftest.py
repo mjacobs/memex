@@ -31,6 +31,9 @@ def base_env(monkeypatch):
     )
     monkeypatch.setenv("MEMEX_AUDIO_BUCKET", "test-bucket")
     monkeypatch.delenv("MEMEX_SERVICE_URL", raising=False)
+    # Tests exercise /internal without OIDC; opt in to the local-dev bypass
+    # explicitly (auth otherwise 503s when MEMEX_SERVICE_URL is unset).
+    monkeypatch.setenv("MEMEX_INSECURE_LOCAL", "1")
     memex.config.settings.cache_clear()
     yield
     memex.config.settings.cache_clear()

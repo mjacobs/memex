@@ -91,3 +91,43 @@ def test_enrich_capture_unknown_id() -> None:
     out = service.enrich_capture("nope")
     assert out["capture"] is None
     assert "not found" in out["error"]
+
+
+def test_enrich_capture_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A redelivered Eventarc event must not create a second note/tasks."""
+    from memex.agent import service
+
+    cap = _make_text_capture("water the plants")
+    canned = EnrichmentResult(
+        transcript="water the plants",
+        summary="Water the plants.",
+        tags=["home"],
+        action_items=[ActionItem(title="Water the plants")],
+    )
+    calls = {"n": 0}
+
+    def fake_enrich(text):
+        calls["n"] += 1
+        return canned
+
+    monkeypatch.setattr(service, "enrich_text", fake_enrich)
+
+    first = service.enrich_capture(cap.id)
+    second = service.enrich_capture(cap.id)
+
+    assert calls["n"] == 1
+    assert second.get("deduped") is True
+    assert second["note"]["id"] == first["note"]["id"]
+    assert [t["id"] for t in second["tasks"]] == [t["id"] for t in first["tasks"]]
+
+
+def test_enrich_capture_in_flight_returns_in_progress() -> None:
+    from memex.agent import service
+
+    cap = _make_text_capture("still being processed")
+    store.update(Capture, cap.id, {"status": "processing"})
+
+    out = service.enrich_capture(cap.id)
+
+    assert out.get("in_progress") is True
+    assert out["note"] is None

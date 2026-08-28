@@ -164,6 +164,7 @@ def queue_approval(action: dict, reason: str) -> dict:
     return {"approval_id": approval.id}
 
 
-# Toolset for routine sessions: everything EXCEPT update_task — routines
-# propose task mutations through the approval queue (contracts.md).
-ROUTINE_TOOLS = [create_note, create_tasks, list_tasks, list_recent_notes, queue_approval]
+# Toolset for routine sessions: no direct task writes (neither update_task
+# nor create_tasks) — routines propose every task mutation through the
+# approval queue (contracts.md task_update / task_create actions).
+ROUTINE_TOOLS = [create_note, list_tasks, list_recent_notes, queue_approval]

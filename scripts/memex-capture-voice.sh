@@ -107,7 +107,6 @@ start_recording() {
     notify_err "ffmpeg not installed"
     exit 1
   }
-  rm -f "$WAVFILE"
   # 16 kHz mono keeps uploads small; -t is the runaway-recording failsafe.
   ffmpeg -nostdin -hide_banner -loglevel error \
     -f pulse -i default -ac 1 -ar 16000 -t "$MAX_SECONDS" -y "$WAVFILE" \
@@ -141,6 +140,7 @@ stop_recording_and_capture() {
     exit 1
   fi
   post_audio "$WAVFILE" audio/wav
+  rm -f "$WAVFILE" # posted; a leftover wav means an unsent recording
 }
 
 if [[ "${1:-}" == "--file" ]]; then
@@ -155,6 +155,13 @@ fi
 
 if pid=$(recording_pid); then
   stop_recording_and_capture "$pid"
+elif [[ -s "$WAVFILE" ]]; then
+  # ffmpeg already exited (hit the -t cap, or crashed after writing): the
+  # completed recording was never posted — send it instead of deleting it.
+  rm -f "$PIDFILE"
+  notify_ok "found finished recording — sending"
+  post_audio "$WAVFILE" audio/wav
+  rm -f "$WAVFILE"
 else
   rm -f "$PIDFILE"
   start_recording
