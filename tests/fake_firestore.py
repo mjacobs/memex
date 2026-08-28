@@ -35,6 +35,9 @@ class FakeDocument:
             raise KeyError(f"no document {self._id}")
         self._collection.docs[self._id].update(deepcopy(changes))
 
+    def delete(self) -> None:
+        self._collection.docs.pop(self._id, None)
+
 
 def _matches(doc: dict, field_path: str, op: str, value: object) -> bool:
     if op == "==":

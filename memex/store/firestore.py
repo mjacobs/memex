@@ -47,6 +47,11 @@ def update[M: BaseModel](model: type[M], doc_id: str, changes: dict) -> None:
     db().collection(COLLECTIONS[model]).document(doc_id).update(changes)
 
 
+def delete[M: BaseModel](model: type[M], doc_id: str) -> None:
+    """Hard-delete a doc. Callers own any dangling references (see routes)."""
+    db().collection(COLLECTIONS[model]).document(doc_id).delete()
+
+
 def query[M: BaseModel](
     model: type[M],
     *,

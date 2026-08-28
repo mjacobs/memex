@@ -70,6 +70,95 @@ def test_note_detail_includes_trace(client, fs):
     assert r404.status_code == 404
 
 
+def test_patch_note_updates_fields_and_traces_the_edit(client, fs):
+    note = _make_note(0, tags=["old"])
+    r = client.patch(
+        f"/api/v1/notes/{note.id}",
+        json={"summary": "my words", "tags": ["new", "home"]},
+        headers=AUTH,
+    )
+    assert r.status_code == 200
+    patched = r.json()["note"]
+    assert patched["summary"] == "my words"
+    assert patched["tags"] == ["new", "home"]
+    assert patched["body"] == "note 0"  # untouched
+
+    event = patched["trace"][-1]
+    assert event["role"] == "user"
+    assert event["text"] == "Edited summary and tags"
+    assert event["args"]["fields"] == ["summary", "tags"]
+    assert event["args"]["tags"] == {"before": ["old"], "after": ["new", "home"]}
+    # the model's original trace is preserved ahead of the user edit
+    assert patched["trace"][0]["role"] == "model"
+
+
+def test_patch_note_body_only_trace_text(client, fs):
+    note = _make_note(0)
+    r = client.patch(
+        f"/api/v1/notes/{note.id}", json={"body": "rewritten"}, headers=AUTH
+    )
+    assert r.status_code == 200
+    event = r.json()["note"]["trace"][-1]
+    assert event["text"] == "Edited body"
+    assert event["args"] == {"fields": ["body"]}
+
+
+def test_patch_note_404_empty_and_unknown_fields(client, fs):
+    r = client.patch("/api/v1/notes/nope", json={"summary": "x"}, headers=AUTH)
+    assert r.status_code == 404
+
+    note = _make_note(0)
+    r = client.patch(f"/api/v1/notes/{note.id}", json={}, headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "empty_update"
+
+    r = client.patch(f"/api/v1/notes/{note.id}", json={"kind": "digest"}, headers=AUTH)
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+
+    r = client.patch(f"/api/v1/notes/{note.id}", json={"tags": "home"}, headers=AUTH)
+    assert r.status_code == 422
+
+    r = client.patch(f"/api/v1/notes/{note.id}", json={"summary": None}, headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_patch"
+
+    # none of the rejected calls touched the doc or appended a trace event
+    unchanged = client.get(f"/api/v1/notes/{note.id}", headers=AUTH).json()["note"]
+    assert unchanged["summary"] == "summary 0"
+    assert unchanged["kind"] == "capture"
+    assert len(unchanged["trace"]) == 1
+
+
+def test_delete_note_leaves_tasks_and_capture_alone(client, fs, agent_stub):
+    r = client.post("/api/v1/capture", json={"text": "buy milk"}, headers=AUTH)
+    assert r.status_code == 201
+    note_id = r.json()["note"]["id"]
+    capture_id = r.json()["capture"]["id"]
+    task_id = r.json()["tasks"][0]["id"]
+
+    d = client.delete(f"/api/v1/notes/{note_id}", headers=AUTH)
+    assert d.status_code == 200
+    assert d.json() == {"deleted": note_id}
+
+    assert client.get(f"/api/v1/notes/{note_id}", headers=AUTH).status_code == 404
+    assert client.delete(f"/api/v1/notes/{note_id}", headers=AUTH).status_code == 404
+    assert note_id not in [n["id"] for n in client.get("/api/v1/notes", headers=AUTH).json()["notes"]]
+
+    # the spawned task and the originating capture survive, dangling ref and all
+    tasks = client.get("/api/v1/tasks", headers=AUTH).json()["tasks"]
+    task = next(t for t in tasks if t["id"] == task_id)
+    assert task["source_note_id"] == note_id
+    capture = client.get(f"/api/v1/captures/{capture_id}", headers=AUTH).json()["capture"]
+    assert capture["note_id"] == note_id
+
+
+def test_note_edit_and_delete_require_auth(client, fs):
+    note = _make_note(0)
+    assert client.patch(f"/api/v1/notes/{note.id}", json={"summary": "x"}).status_code == 401
+    assert client.delete(f"/api/v1/notes/{note.id}").status_code == 401
+
+
 def test_tasks_default_open(client, fs):
     open_task = _make_task("open one")
     done_task = _make_task("done one", status="done")

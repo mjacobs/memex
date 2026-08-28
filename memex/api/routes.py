@@ -5,7 +5,7 @@ from typing import get_args
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from memex.api import gcs
 from memex.api.auth import require_device
@@ -21,6 +21,7 @@ from memex.models import (
     TaskCreateAction,
     TaskStatus,
     TaskUpdateAction,
+    TraceEvent,
 )
 from memex.store import firestore as store
 
@@ -163,6 +164,70 @@ def get_note(note_id: str) -> dict:
     if note is None:
         raise ApiError(404, "not_found", f"note {note_id} not found")
     return {"note": dump(note)}
+
+
+class NotePatch(BaseModel):
+    """Owner edits to a note. Unknown fields are a 422 from FastAPI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str | None = None
+    body: str | None = None
+    tags: list[str] | None = None
+
+
+def _edit_summary(fields: list[str]) -> str:
+    """"summary", "tags" -> "summary and tags"; three -> "a, b and c"."""
+    if len(fields) == 1:
+        return fields[0]
+    return f"{', '.join(fields[:-1])} and {fields[-1]}"
+
+
+@router.patch("/notes/{note_id}")
+def patch_note(note_id: str, body: NotePatch) -> dict:
+    note = store.get(Note, note_id)
+    if note is None:
+        raise ApiError(404, "not_found", f"note {note_id} not found")
+    updates = body.model_dump(exclude_unset=True)
+    # Explicit nulls would corrupt required Note fields in Firestore and make
+    # the doc unreadable; there is no nullable field to clear here.
+    for field, value in updates.items():
+        if value is None:
+            raise ApiError(400, "invalid_patch", f"{field} cannot be null")
+    if "tags" in updates:
+        updates["tags"] = [t.strip() for t in updates["tags"] if t.strip()]
+    changed = [f for f in ("summary", "body", "tags") if f in updates]
+    if not changed:
+        raise ApiError(400, "empty_update", "no updatable fields given")
+    # The trace is the honesty surface: an owner edit is recorded as a user
+    # event alongside the model's own work, not applied silently.
+    args: dict = {"fields": changed}
+    if "tags" in updates:
+        args["tags"] = {"before": list(note.tags), "after": list(updates["tags"])}
+    event = TraceEvent(
+        t=store.now(),
+        role="user",
+        text=f"Edited {_edit_summary(changed)}",
+        args=args,
+    )
+    trace = [e.model_dump(mode="python") for e in note.trace]
+    trace.append(event.model_dump(mode="python"))
+    store.update(Note, note_id, {**updates, "trace": trace})
+    updated = store.get(Note, note_id)
+    assert updated is not None
+    return {"note": dump(updated)}
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: str) -> dict:
+    """Hard-delete. Tasks spawned from the note and the originating capture
+    survive with a dangling id — deleting a note is not a retraction of the
+    work it produced, and readers tolerate a missing note."""
+    note = store.get(Note, note_id)
+    if note is None:
+        raise ApiError(404, "not_found", f"note {note_id} not found")
+    store.delete(Note, note_id)
+    return {"deleted": note_id}
 
 
 @router.get("/tasks")

@@ -79,7 +79,7 @@ The feed. Both enriched captures and routine output.
 | `summary`        | string                                      |                                         |
 | `tags`           | string[]                                    | lowercase kebab                         |
 | `task_ids`       | ulid[]                                      | tasks extracted from this note          |
-| `trace`          | array<event>                                | agent events for the turn that produced it (see Trace) |
+| `trace`          | array<event>                                | agent events for the turn that produced it, plus a `role:"user"` event per owner edit (see Trace) |
 
 ### `tasks/{id}`
 
@@ -118,9 +118,13 @@ HITL queue. Launch scope: task mutations only.
 ```
 
 Approving applies the action server-side in the same request, then sets
-`status=approved`, `result`. Direct user edits via `PATCH /tasks/{id}` do NOT
-go through approvals — the queue is only for **agent-proposed** mutations from
-routines.
+`status=approved`, `result`. Direct user edits via `PATCH /tasks/{id}` or
+`PATCH /notes/{id}` do NOT go through approvals — the queue is only for
+**agent-proposed** mutations from routines.
+
+Deleting a note is a hard delete and does **not** cascade: tasks keep their
+`source_note_id` and captures keep their `note_id`, so both may point at a
+note that no longer exists. Readers must tolerate a 404 on those ids.
 
 ### `routine_runs/{id}`
 
@@ -159,6 +163,8 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio status)    |
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |
 | `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`                 |
+| `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event |
+| `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete      |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |
 | `PATCH /api/v1/tasks/{id}`           | `{"status?", "title?", "due_at?", "tags?"}`        | `200 {task}`                               |
 | `GET /api/v1/approvals`              | `?status=pending` (default pending)                | `200 {approvals: […]}`                     |
