@@ -86,6 +86,20 @@ def test_audio_capture_ext_mapping(client, fake_gcs):
         assert fake_gcs[-1]["ext"] == ext
 
 
+def test_image_capture_drops_an_unusable_source_url(client, fake_gcs):
+    """Provenance is a nice-to-have: a URL we could not render as a link is
+    dropped, but the screenshot itself is still saved."""
+    r = client.post(
+        "/api/v1/capture/image",
+        json=_image_body(source_url="javascript:alert(1)", title="  Spaced  "),
+        headers=AUTH,
+    )
+    assert r.status_code == 202
+    cap = client.get(f"/api/v1/captures/{r.json()['id']}", headers=AUTH).json()["capture"]
+    assert cap["source_url"] is None
+    assert cap["title"] == "Spaced"
+
+
 def test_audio_capture_bad_content_type_415(client, fake_gcs):
     r = client.post(
         "/api/v1/capture/audio",

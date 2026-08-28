@@ -29,16 +29,32 @@ logger = logging.getLogger(__name__)
 READ_LATER_TAG = "read-later"
 
 
+def _md_label(text: str) -> str:
+    """Link text taken from a page title. Brackets would close the link early
+    and a newline would end the paragraph, so neither survives."""
+    flattened = "".join(c if c.isprintable() else " " for c in text)
+    return flattened.replace("[", "(").replace("]", ")").strip()
+
+
+def _md_url(url: str) -> str:
+    """Link destination taken from a page URL. A ")" ends the destination
+    early — leaving the rest of the URL as body text — and control characters
+    would break the line, so both are percent-encoded away."""
+    encoded = "".join(
+        f"%{ord(c):02X}" if (c in "()<> " or not c.isprintable()) else c for c in url
+    )
+    return encoded
+
+
 def _link_body(capture: Capture) -> str:
     """Markdown body for a link capture: the clickable link on line one.
 
     Built in code rather than asked of the model, so the note the SPA renders
     always leads with a working link to the saved page.
     """
-    label = (capture.title or "").strip() or capture.url or ""
-    # A "]" in the title would close the markdown link early.
-    label = label.replace("[", "(").replace("]", ")")
-    body = f"[{label}]({capture.url})"
+    url = capture.url or ""
+    label = _md_label(capture.title or "") or url
+    body = f"[{label}]({_md_url(url)})"
     note = (capture.text or "").strip()
     return f"{body}\n\n{note}" if note else body
 
@@ -62,10 +78,10 @@ def _image_note_body(capture: Capture, description: str) -> str:
     if capture.text:
         parts.append(f"**Note:** {capture.text}")
     if capture.source_url:
-        label = capture.title or capture.source_url
-        parts.append(f"Source: [{label}]({capture.source_url})")
+        label = _md_label(capture.title or "") or capture.source_url
+        parts.append(f"Source: [{label}]({_md_url(capture.source_url)})")
     elif capture.title:
-        parts.append(f"Source: {capture.title}")
+        parts.append(f"Source: {_md_label(capture.title)}")
     return "\n\n".join(parts)
 
 

@@ -146,6 +146,24 @@ def _clean_url(url: str) -> str:
     return url
 
 
+def _optional_url(url: str | None) -> str | None:
+    """A provenance URL we can offer as a link, or nothing.
+
+    Unlike a saved link — where a bad URL is the whole request and earns a
+    400 — a screenshot's source page is a nice-to-have. A chrome-extension:
+    or file: URL just gets dropped rather than costing the user the capture.
+    """
+    if not url:
+        return None
+    url = url.strip()
+    if len(url) > MAX_URL_LENGTH:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        return None
+    return url
+
+
 def _truncate(value: str | None, limit: int) -> str | None:
     if value is None:
         return None
@@ -298,11 +316,11 @@ async def capture_image(
         source=_source(body.source),
         device_id=device_id,
         kind="image",
-        text=(body.text.strip() or None) if body.text else None,
+        text=_truncate(body.text, 4000),
         image_gcs_uri=gcs.image_uri(capture_id, ext),
         image_mime=mime,
-        source_url=body.source_url or None,
-        title=body.title or None,
+        source_url=_optional_url(body.source_url),
+        title=_truncate(body.title, 500),
         status="pending",
     )
     await anyio.to_thread.run_sync(store.put, capture)

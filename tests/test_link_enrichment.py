@@ -76,6 +76,28 @@ def test_brackets_in_a_title_cannot_break_the_link(fs, canned):
     )
 
 
+def test_parens_in_a_url_cannot_end_the_link_early(fs, canned):
+    from memex.agent import service
+
+    cap = _link_capture(url="https://en.wikipedia.org/wiki/Foo_(bar)")
+    out = service.enrich_capture(cap.id)
+
+    assert out["note"]["body"] == (
+        "[A post](https://en.wikipedia.org/wiki/Foo_%28bar%29)"
+    )
+
+
+def test_a_newline_in_a_title_cannot_break_the_body(fs, canned):
+    from memex.agent import service
+
+    cap = _link_capture(title="Buy now\n\n# Free money")
+    out = service.enrich_capture(cap.id)
+
+    body = out["note"]["body"]
+    assert "\n" not in body
+    assert body == "[Buy now  # Free money](https://example.com/post)"
+
+
 def test_read_later_tag_is_always_present(fs, canned):
     from memex.agent import service
 
