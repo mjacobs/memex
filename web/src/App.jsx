@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getKey, setKey, setUnauthorizedHandler } from "./api.js";
+import { getKey, setUnauthorizedHandler } from "./api.js";
 import { useRoute } from "./router.js";
 import Composer from "./Composer.jsx";
 import Login from "./Login.jsx";
@@ -9,6 +9,7 @@ import NoteDetail from "./views/NoteDetail.jsx";
 import Tasks from "./views/Tasks.jsx";
 import Approvals from "./views/Approvals.jsx";
 import { RunDetail, RunList } from "./views/Runs.jsx";
+import Settings from "./views/Settings.jsx";
 
 const NAV = [
   ["", "Feed"],
@@ -73,6 +74,8 @@ export default function App() {
   else if (section === "approvals") view = <Approvals />;
   else if (section === "runs" && id) view = <RunDetail id={id} />;
   else if (section === "runs") view = <RunList />;
+  else if (section === "settings")
+    view = <Settings onKeyChanged={() => setRefreshToken((n) => n + 1)} />;
   else view = <Feed pendingCaptures={pendingCaptures} refreshToken={refreshToken} />;
 
   return (
@@ -92,21 +95,14 @@ export default function App() {
             </a>
           ))}
         </nav>
-        <button
-          className="settings-btn"
-          title="change device key"
-          aria-label="change device key"
-          onClick={() => {
-            setKey("");
-            setAuthReason(null);
-            setAuthed(false);
-          }}
-        >
-          ⚙
-        </button>
       </header>
       <ErrorBanner error={globalError} onDismiss={() => setGlobalError(null)} />
       {view}
+      {/* Deliberately buried: changing the device key is rare, and the old
+          topbar gear wiped the stored key on a stray click. */}
+      <footer className="app-footer">
+        <a href="#/settings">settings</a>
+      </footer>
       <Composer
         onPending={onPending}
         onUpdatePending={onUpdatePending}

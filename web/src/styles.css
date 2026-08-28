@@ -131,13 +131,19 @@ a {
   font-weight: 600;
 }
 
-.settings-btn {
-  margin-left: auto;
-  background: none;
-  border: none;
+.app-footer {
+  text-align: center;
+  padding: 24px 0 8px;
+}
+
+.app-footer a {
   color: var(--text-dim);
-  font-size: 16px;
-  padding: 4px;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  text-decoration: underline;
 }
 
 /* ---- generic ---- */
