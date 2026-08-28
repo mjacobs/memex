@@ -2,11 +2,28 @@ import { useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
+// External links (http/https) open in a new tab with noopener/noreferrer;
+// in-app links (href="#/...", e.g. from routine-generated citations like
+// "[note](#/notes/<id>)") stay as plain same-tab anchors so the hash router
+// picks them up natively.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName !== "A") return;
+  const href = node.getAttribute("href") || "";
+  if (/^https?:\/\//i.test(href)) {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  } else {
+    node.removeAttribute("target");
+  }
+});
+
 /** Render note/run body text as sanitized markdown. */
 export function Markdown({ text }) {
   const html = useMemo(() => {
     if (!text) return "";
-    return DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }));
+    return DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }), {
+      ADD_ATTR: ["target", "rel"],
+    });
   }, [text]);
   if (!text) return null;
   return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
