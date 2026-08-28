@@ -29,11 +29,16 @@ logger = logging.getLogger(__name__)
 READ_LATER_TAG = "read-later"
 
 
+_MD_ESCAPE = str.maketrans({c: f"\\{c}" for c in "\\`*_[]<>"})
+
+
 def _md_label(text: str) -> str:
-    """Link text taken from a page title. Brackets would close the link early
-    and a newline would end the paragraph, so neither survives."""
+    """Link text taken off a web page. It is data, not markup: a newline would
+    end the paragraph and let the title add its own headings, brackets would
+    close the link early, and a raw "<" could open an anchor of its own that
+    the sanitizer has no reason to strip. All of it comes out literal."""
     flattened = "".join(c if c.isprintable() else " " for c in text)
-    return flattened.replace("[", "(").replace("]", ")").strip()
+    return flattened.translate(_MD_ESCAPE).strip()
 
 
 def _md_url(url: str) -> str:
@@ -53,7 +58,7 @@ def _link_body(capture: Capture) -> str:
     always leads with a working link to the saved page.
     """
     url = capture.url or ""
-    label = _md_label(capture.title or "") or url
+    label = _md_label(capture.title or "") or _md_label(url)
     body = f"[{label}]({_md_url(url)})"
     note = (capture.text or "").strip()
     return f"{body}\n\n{note}" if note else body
@@ -78,7 +83,7 @@ def _image_note_body(capture: Capture, description: str) -> str:
     if capture.text:
         parts.append(f"**Note:** {capture.text}")
     if capture.source_url:
-        label = _md_label(capture.title or "") or capture.source_url
+        label = _md_label(capture.title or "") or _md_label(capture.source_url)
         parts.append(f"Source: [{label}]({_md_url(capture.source_url)})")
     elif capture.title:
         parts.append(f"Source: {_md_label(capture.title)}")

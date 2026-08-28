@@ -65,14 +65,14 @@ def test_body_falls_back_to_the_url_when_untitled(fs, canned):
     assert out["note"]["body"] == "[https://example.com/post](https://example.com/post)"
 
 
-def test_brackets_in_a_title_cannot_break_the_link(fs, canned):
+def test_markdown_in_a_title_cannot_break_the_link(fs, canned):
     from memex.agent import service
 
-    cap = _link_capture(title="Rust [async] book")
+    cap = _link_capture(title="Rust [async] *book* <a href=x>")
     out = service.enrich_capture(cap.id)
 
     assert out["note"]["body"] == (
-        "[Rust (async) book](https://example.com/post)"
+        r"[Rust \[async\] \*book\* \<a href=x\>](https://example.com/post)"
     )
 
 
