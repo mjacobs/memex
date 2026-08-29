@@ -17,10 +17,11 @@ resource "google_firestore_database" "default" {
 # ascending (agent tools) and descending (API feed) order.
 locals {
   eq_indexes = {
-    tasks_status     = { collection = "tasks", field = "status", array = false }
-    approvals_status = { collection = "approvals", field = "status", array = false }
-    notes_kind       = { collection = "notes", field = "kind", array = false }
-    notes_tags       = { collection = "notes", field = "tags", array = true }
+    tasks_status      = { collection = "tasks", field = "status", array = false }
+    approvals_status  = { collection = "approvals", field = "status", array = false }
+    notes_kind        = { collection = "notes", field = "kind", array = false }
+    notes_tags        = { collection = "notes", field = "tags", array = true }
+    operations_status = { collection = "operations", field = "status", array = false }
   }
 }
 

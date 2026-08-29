@@ -27,3 +27,13 @@ output "device_keys_secret" {
   description = "Secret Manager secret holding device bearer keys."
   value       = google_secret_manager_secret.device_keys.secret_id
 }
+
+output "operations_queue" {
+  description = "Cloud Tasks queue name for durable operations (MEMEX_TASKS_QUEUE)."
+  value       = google_cloud_tasks_queue.operations.name
+}
+
+output "operations_queue_path" {
+  description = "Fully-qualified Cloud Tasks queue resource path."
+  value       = google_cloud_tasks_queue.operations.id
+}

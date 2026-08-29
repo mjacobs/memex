@@ -83,6 +83,27 @@ resource "google_project_iam_member" "gcs_pubsub_publisher" {
   member  = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"
 }
 
+# --- Cloud Tasks grants ------------------------------------------------------
+
+# Runtime SA enqueues the self-rescheduling poll task (deep-research LRO).
+# Queue-scoped, not project-wide, matching the bucket grants above.
+resource "google_cloud_tasks_queue_iam_member" "run_tasks_enqueuer" {
+  name     = google_cloud_tasks_queue.operations.id
+  location = google_cloud_tasks_queue.operations.location
+  project  = var.project
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.run.email}"
+}
+
+# Cloud Tasks attaches the scheduler SA's OIDC token to each poll dispatch
+# (audience = service URL, verified by /internal/* like the scheduler jobs
+# already are); the runtime SA needs actAs to mint tasks under that identity.
+resource "google_service_account_iam_member" "run_actas_scheduler" {
+  service_account_id = google_service_account.scheduler.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.run.email}"
+}
+
 # --- Scheduler grants -------------------------------------------------------
 
 resource "google_cloud_run_v2_service_iam_member" "scheduler_invoker" {

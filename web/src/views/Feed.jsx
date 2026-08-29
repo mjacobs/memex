@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate, useQuery } from "../router.js";
 import { Badge, ErrorBanner, Loading, Tags, TagFilterBar } from "../components.jsx";
 
 function NoteCard({ note, selectedTags, onTagClick }) {
-  // Routine output (digest/review) gets the accented card; captures and saved
-  // links are the user's own material and stay plain.
-  const routine = note.kind === "digest" || note.kind === "review";
+  // Agent output (digest/review/research) gets the accented card; captures
+  // and saved links are the user's own material and stay plain.
+  const agentNote = ["digest", "review", "research"].includes(note.kind);
   return (
     <div
-      className={`card clickable ${routine ? `note-routine kind-${note.kind}` : ""}`}
+      className={`card clickable ${agentNote ? `note-routine kind-${note.kind}` : ""}`}
       onClick={() => navigate(`notes/${note.id}`)}
     >
       <div className="row spread">
@@ -39,6 +39,10 @@ const PAGE = 50;
 // matches costs a handful of requests rather than a walk of every note.
 const MAX_PAGES = 10;
 
+// Deep Research runs take minutes; a 15 s poll is timely without hammering
+// the API, and polling stops entirely once nothing is running.
+const OPS_POLL_MS = 15000;
+
 /** pendingCaptures: [{id, label, status}] — optimistic entries from the composer. */
 export default function Feed({ pendingCaptures, refreshToken }) {
   const [notes, setNotes] = useState(null);
@@ -59,6 +63,35 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     () => new Set(tagKey ? tagKey.split(",") : []),
     [tagKey],
   );
+
+  // "Research pending" badge: poll running operations while any exist. When
+  // the count drops to zero a report note has (or may have) landed, so bump
+  // opsSettled to refetch the feed without a manual reload.
+  const [runningOps, setRunningOps] = useState(0);
+  const [opsSettled, setOpsSettled] = useState(0);
+  const prevRunning = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+    async function poll() {
+      let count;
+      try {
+        count = (await api.listOperations("running")).operations.length;
+      } catch {
+        return; // the badge is best-effort; the feed already surfaces errors
+      }
+      if (!alive) return;
+      if (prevRunning.current > 0 && count === 0) setOpsSettled((n) => n + 1);
+      prevRunning.current = count;
+      setRunningOps(count);
+      if (count > 0) timer = setTimeout(poll, OPS_POLL_MS);
+    }
+    poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [refreshToken]);
 
   useEffect(() => {
     let alive = true;
@@ -96,7 +129,7 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     return () => {
       alive = false;
     };
-  }, [refreshToken, tagKey]);
+  }, [refreshToken, tagKey, opsSettled]);
 
   const setTags = (tags) =>
     navigate(tags.length > 0 ? `?tags=${tags.map(encodeURIComponent).join(",")}` : "");
@@ -116,6 +149,12 @@ export default function Feed({ pendingCaptures, refreshToken }) {
         onRemove={toggleTag}
         onClear={() => setTags([])}
       />
+      {runningOps > 0 && (
+        <div className="research-pending">
+          <span className="spinner" /> research pending
+          {runningOps > 1 ? ` (${runningOps})` : ""}
+        </div>
+      )}
       {pendingCaptures.map((p) => (
         <PendingCard key={p.id} pending={p} />
       ))}

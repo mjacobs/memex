@@ -108,7 +108,76 @@ export const api = {
   reject: (id) => request(`/api/v1/approvals/${id}/reject`, { method: "POST" }),
   listRuns: (limit = 20) => request(`/api/v1/routines/runs?limit=${limit}`),
   getRun: (id) => request(`/api/v1/routines/runs/${id}`),
+  listOperations: (status) =>
+    request(`/api/v1/operations${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createChatSession: () => request("/api/v1/chat/sessions", { method: "POST" }),
+  listChatSessions: (limit = 20) => request(`/api/v1/chat/sessions?limit=${limit}`),
+  getChatSession: (id) => request(`/api/v1/chat/sessions/${id}`),
 };
+
+// POST /chat/sessions/{id}/messages streams text/event-stream, which
+// EventSource can't do (GET only) — so read the fetch body and split SSE
+// frames by hand. The server emits one single-line JSON `data:` per frame:
+// `event: trace` per TraceEvent, then `event: done` with the session summary,
+// or `event: error` if the turn crashed mid-stream.
+export async function streamChatMessage(sessionId, text, { onTrace, onDone, onError }) {
+  let res;
+  try {
+    res = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    throw new ApiError(0, "network", e.message || "network error");
+  }
+  if (res.status === 401) {
+    if (onUnauthorized) onUnauthorized();
+    throw new ApiError(401, "unauthorized", "invalid or missing device key");
+  }
+  if (!res.ok) {
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* non-JSON body */
+    }
+    const err = data && data.error ? data.error : {};
+    throw new ApiError(res.status, err.code || "error", err.message || res.statusText);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buf.indexOf("\n\n")) !== -1) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      let event = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data = line.slice(5).trim();
+      }
+      if (!data) continue;
+      let payload;
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (event === "trace" && onTrace) onTrace(payload);
+      else if (event === "done" && onDone) onDone(payload);
+      else if (event === "error" && onError) onError(payload.error || payload);
+    }
+  }
+}
 
 export function relativeTime(iso) {
   if (!iso) return "";

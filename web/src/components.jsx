@@ -124,7 +124,8 @@ function Json({ value }) {
   return <pre>{JSON.stringify(value, null, 2)}</pre>;
 }
 
-function TraceEvent({ event }) {
+/** One compact trace event — also reused by the chat panel for tool calls. */
+export function TraceEvent({ event }) {
   const role = event.role || "model";
   // A role="user" event is either the prompt that started the turn or an owner
   // edit; PATCH /notes/{id} is the only writer of args.fields, so it labels

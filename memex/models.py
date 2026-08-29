@@ -13,11 +13,13 @@ from pydantic import BaseModel, Field, field_validator
 CaptureSource = Literal["ios", "desktop", "web", "api"]
 CaptureKind = Literal["text", "audio", "image", "link"]
 CaptureStatus = Literal["pending", "processing", "enriched", "failed"]
-NoteKind = Literal["capture", "digest", "review", "link"]
+NoteKind = Literal["capture", "digest", "review", "link", "research"]
 TaskStatus = Literal["open", "done", "dropped"]
 ApprovalStatus = Literal["pending", "approved", "rejected"]
 RoutineName = Literal["daily_review", "nightly_digest"]
 RoutineStatus = Literal["running", "succeeded", "failed"]
+OperationKind = Literal["deep_research"]
+OperationStatus = Literal["running", "completed", "failed"]
 
 
 _TAG_SPLIT = re.compile(r",+")
@@ -100,6 +102,8 @@ class Note(_Tagged):
     summary: str
     tags: list[str] = Field(default_factory=list)
     task_ids: list[str] = Field(default_factory=list)
+    # kind=research: the note that asked for the research.
+    source_note_id: str | None = None
     trace: list[TraceEvent] = Field(default_factory=list)
 
 
@@ -148,6 +152,31 @@ class RoutineRun(BaseModel):
     approval_ids: list[str] = Field(default_factory=list)
     trace: list[TraceEvent] = Field(default_factory=list)
     error: str | None = None
+
+
+class Operation(BaseModel):
+    """Durable long-running operation (Firestore queue + Cloud Tasks poll)."""
+
+    id: str
+    kind: OperationKind
+    status: OperationStatus = "running"
+    created_at: datetime
+    updated_at: datetime
+    # The aiplatform interaction handle (kind=deep_research).
+    interaction_id: str
+    source_note_id: str
+    result_note_id: str | None = None
+    attempts: int = 0
+    error: str | None = None
+
+
+class ChatSession(BaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    # First user message, truncated.
+    title: str | None = None
+    trace: list[TraceEvent] = Field(default_factory=list)
 
 
 class EnrichmentResult(BaseModel):

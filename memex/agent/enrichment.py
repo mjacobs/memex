@@ -5,13 +5,16 @@ an `EnrichmentResult` — transcript, summary, tags, action items. No tool loop:
 tools are for routine sessions only.
 """
 
+import logging
 from functools import lru_cache
 
 from google import genai
 from google.genai import types
 
 from memex.config import settings
-from memex.models import EnrichmentResult
+from memex.models import EnrichmentResult, Note
+
+logger = logging.getLogger(__name__)
 
 _INSTRUCTION_AUDIO = """\
 You are memex, a personal capture assistant. Listen to the attached audio memo.
@@ -182,6 +185,42 @@ def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResu
         config=_config(),
     )
     return EnrichmentResult.model_validate_json(response.text)
+
+
+def maybe_start_research(note: Note) -> dict | None:
+    """Kick off a deep-research operation when the capture note asks for one.
+
+    Enrichment path per docs/contracts.md: after the capture note is written,
+    `research` ∈ tags starts a deep-research operation. Failure to *start*
+    must never fail the capture — the user still has their note and can retry
+    from chat (`start_research`). But it must not be invisible either: the
+    outcome is returned so the capture response can carry it, because a
+    kickoff that only ever failed into the log looks to the user exactly like
+    a capture that was never tagged for research at all.
+
+    Returns `{"operation_id": ...}` or `{"error": ...}`, or None when the note
+    did not ask for research.
+    """
+    from memex.agent.research import RESEARCH_TAG, start_research_operation
+
+    if RESEARCH_TAG not in note.tags:
+        return None
+    try:
+        result = start_research_operation(note.id)
+    except Exception as exc:  # start_research_operation shouldn't raise, but even so
+        logger.exception("failed to start research for note %s", note.id)
+        return {"error": str(exc)}
+    if result.get("error"):
+        logger.error(
+            "failed to start research for note %s: %s", note.id, result["error"]
+        )
+    else:
+        logger.info(
+            "started research operation %s for note %s",
+            result.get("operation_id"),
+            note.id,
+        )
+    return result
 
 
 def enrich_audio(audio: bytes, mime_type: str) -> EnrichmentResult:

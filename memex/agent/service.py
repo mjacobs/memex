@@ -18,7 +18,13 @@ from google.cloud import storage
 
 from memex.agent import routines as routines_mod
 from memex.agent import tools
-from memex.agent.enrichment import enrich_audio, enrich_image, enrich_link, enrich_text
+from memex.agent.enrichment import (
+    enrich_audio,
+    enrich_image,
+    enrich_link,
+    enrich_text,
+    maybe_start_research,
+)
 from memex.config import settings
 from memex.ids import new_ulid
 from memex.models import Capture, Note, RoutineRun, Task, TraceEvent
@@ -92,6 +98,22 @@ def _link_tags(tags: list[str]) -> list[str]:
     return tags if READ_LATER_TAG in tags else [READ_LATER_TAG, *tags]
 
 
+def _may_ask_for_research(capture: Capture) -> bool:
+    """Whether this capture's own content is allowed to start a paid research
+    run.
+
+    A research kickoff spends real money, so only the user's own words may
+    ask for one. A saved link is a URL and a title the site chose, and a
+    screenshot with no caption is a page the user only pointed at — a tag
+    off either of those came from the page, not from them. Same rule, same
+    reason as the bare-link action-items gate below: the prompts say page
+    text is not instructions; these gates make it true.
+    """
+    if capture.kind in ("link", "image"):
+        return bool((capture.text or "").strip())
+    return True
+
+
 def _download_gcs(gcs_uri: str) -> bytes:
     if not gcs_uri.startswith("gs://"):
         raise ValueError(f"not a gs:// uri: {gcs_uri}")
@@ -118,7 +140,12 @@ def enrich_capture(capture_id: str) -> dict:
     the capture is marked failed and the error is returned in the dict."""
     capture = store.get(Capture, capture_id)
     if capture is None:
-        return {"capture": None, "note": None, "tasks": [], "error": f"capture {capture_id} not found"}
+        return {
+            "capture": None,
+            "note": None,
+            "tasks": [],
+            "error": f"capture {capture_id} not found",
+        }
 
     # Eventarc delivery is at-least-once: a redelivered finalize event must
     # not re-enrich (duplicate notes/tasks). "processing" younger than 30
@@ -263,12 +290,22 @@ def enrich_capture(capture_id: str) -> dict:
         )
         capture.status = "enriched"
         capture.note_id = note.id
+        # After the capture note lands: research ∈ tags starts a deep-research
+        # operation. Never fails the capture — but the outcome rides back in
+        # the result so a kickoff that failed is visible to the caller
+        # instead of only to the log.
+        research = (
+            maybe_start_research(note) if _may_ask_for_research(capture) else None
+        )
         tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
-        return {
+        result_out = {
             "capture": capture.model_dump(mode="json"),
             "note": note.model_dump(mode="json"),
             "tasks": [t.model_dump(mode="json") for t in tasks_out],
         }
+        if research is not None:
+            result_out["research"] = research
+        return result_out
     except Exception as exc:
         logger.exception("enrichment failed for capture %s", capture_id)
         store.update(Capture, capture_id, {"status": "failed", "error": str(exc)})

@@ -20,6 +20,7 @@ from memex.models import (
     Capture,
     CaptureSource,
     Note,
+    OperationStatus,
     RoutineRun,
     Task,
     TaskCreateAction,
@@ -68,7 +69,7 @@ def _enrich(capture_id: str) -> dict:
     return enrich_capture(capture_id)
 
 
-def _enrich_or_fail(capture: Capture) -> None:
+def _enrich_or_fail(capture: Capture) -> dict:
     """Run enrichment for a just-written capture; mark the capture failed and
     raise ApiError on error. enrich_capture reports enrichment failures in its
     result rather than raising, so both shapes are handled here."""
@@ -81,20 +82,31 @@ def _enrich_or_fail(capture: Capture) -> None:
         raise ApiError(502, "enrichment_failed", str(exc)) from exc
     if result.get("error"):
         raise ApiError(502, "enrichment_failed", result["error"])
+    return result
 
 
-def _capture_result(capture: Capture) -> dict:
-    """The {capture, note, tasks} envelope the sync capture paths return."""
+def _capture_result(capture: Capture, enrichment: dict | None = None) -> dict:
+    """The {capture, note, tasks} envelope the sync capture paths return.
+
+    A note tagged for research also carries `research`:
+    `{"operation_id": ...}` when the run started, `{"error": ...}` when it
+    could not — a failed kickoff would otherwise be indistinguishable from a
+    note that never asked for research.
+    """
     capture = store.get(Capture, capture.id) or capture
     note = store.get(Note, capture.note_id) if capture.note_id else None
     tasks: list[Task] = []
     if note:
         tasks = [t for tid in note.task_ids if (t := store.get(Task, tid))]
-    return {
+    out = {
         "capture": dump(capture),
         "note": dump(note) if note else None,
         "tasks": [dump(t) for t in tasks],
     }
+    research = (enrichment or {}).get("research")
+    if research is not None:
+        out["research"] = research
+    return out
 
 
 class CaptureIn(BaseModel):
@@ -116,8 +128,7 @@ def capture_text(body: CaptureIn, device_id: str = Depends(require_device)) -> d
         status="pending",
     )
     store.put(capture)
-    _enrich_or_fail(capture)
-    return _capture_result(capture)
+    return _capture_result(capture, _enrich_or_fail(capture))
 
 
 class LinkIn(BaseModel):
@@ -166,8 +177,9 @@ def _clean_url(url: str) -> str:
     cleaned = _http_url(url)
     if cleaned is None:
         raise ApiError(
-            400, "invalid_url", f"url must be an http(s) URL under "
-            f"{MAX_URL_LENGTH} characters"
+            400,
+            "invalid_url",
+            f"url must be an http(s) URL under {MAX_URL_LENGTH} characters",
         )
     return cleaned
 
@@ -333,7 +345,9 @@ async def capture_image(
     try:
         data = base64.b64decode(body.image_base64, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise ApiError(400, "invalid_base64", "image_base64 is not valid base64") from exc
+        raise ApiError(
+            400, "invalid_base64", "image_base64 is not valid base64"
+        ) from exc
     if not data:
         raise ApiError(400, "empty_body", "image must be non-empty")
     if len(data) > MAX_IMAGE_BYTES:
@@ -438,7 +452,7 @@ class NotePatch(BaseModel):
 
 
 def _edit_summary(fields: list[str]) -> str:
-    """"summary", "tags" -> "summary and tags"; three -> "a, b and c"."""
+    """ "summary", "tags" -> "summary and tags"; three -> "a, b and c"."""
     if len(fields) == 1:
         return fields[0]
     return f"{', '.join(fields[:-1])} and {fields[-1]}"
@@ -617,6 +631,16 @@ def reject(approval_id: str) -> dict:
     refreshed = store.get(Approval, approval_id)
     assert refreshed is not None
     return {"approval": dump(refreshed)}
+
+
+@router.get("/operations")
+def list_operations(status: str | None = None, limit: int = 50) -> dict:
+    """List LRO queue entries (the feed's "research pending" badge polls
+    ?status=running)."""
+    if status is not None and status not in get_args(OperationStatus):
+        raise ApiError(400, "invalid_status", f"invalid operation status: {status}")
+    operations = store.list_operations(status=status, limit=limit)
+    return {"operations": [dump(o) for o in operations]}
 
 
 @router.get("/routines/runs")

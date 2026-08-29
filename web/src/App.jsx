@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getKey, setUnauthorizedHandler } from "./api.js";
 import { useRoute } from "./router.js";
+import Chat from "./Chat.jsx";
 import Composer from "./Composer.jsx";
 import Login from "./Login.jsx";
 import { ErrorBanner } from "./components.jsx";
@@ -24,6 +25,7 @@ export default function App() {
   const [pendingCaptures, setPendingCaptures] = useState([]);
   const [refreshToken, setRefreshToken] = useState(0);
   const [globalError, setGlobalError] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const route = useRoute();
 
   useEffect(() => {
@@ -95,6 +97,12 @@ export default function App() {
             </a>
           ))}
         </nav>
+        <button
+          className={`chat-toggle ${chatOpen ? "active" : ""}`}
+          onClick={() => setChatOpen((o) => !o)}
+        >
+          Chat
+        </button>
       </header>
       <ErrorBanner error={globalError} onDismiss={() => setGlobalError(null)} />
       {view}
@@ -109,6 +117,10 @@ export default function App() {
         onSettled={onSettled}
         onError={setGlobalError}
       />
+      {/* Mounted outside the routed view so the open conversation and an
+          in-flight turn survive navigating the main pane (e.g. following a
+          #/notes/<id> citation from a chat reply). */}
+      <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

@@ -287,6 +287,21 @@ export default function NoteDetail({ id }) {
             <Tags tags={note.tags} onTagClick={(t) => navigate(`?tags=${encodeURIComponent(t)}`)} />
           )}
 
+          {/* A research report links back to the note that asked for it. The
+              source may have been deleted since; NoteDetail's own 404 state
+              covers that on arrival. */}
+          {note.source_note_id && (
+            <div className="section">
+              <h3>Source note</h3>
+              <button
+                className="btn"
+                onClick={() => navigate(`notes/${note.source_note_id}`)}
+              >
+                Open source note
+              </button>
+            </div>
+          )}
+
           <LinkedTasks taskIds={note.task_ids} />
           <Trace trace={note.trace} />
         </>

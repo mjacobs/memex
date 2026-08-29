@@ -28,6 +28,19 @@ class Settings(BaseModel):
     # {"<device_id>": "<key>"}; prod loads from Secret Manager into this env
     device_keys: dict[str, str] = {}
     service_url: str = _env("MEMEX_SERVICE_URL")  # OIDC audience
+    # Cloud Tasks queue for durable operations (deep-research polling).
+    tasks_queue: str = _env("MEMEX_TASKS_QUEUE", "memex-operations")
+    tasks_location: str = _env("MEMEX_TASKS_LOCATION", "us-central1")
+    # Service account whose OIDC token Cloud Tasks attaches when calling
+    # /internal/operations/poll (audience = service_url). Reuses the
+    # scheduler invoker SA, which internal_invokers below already trusts.
+    tasks_invoker_sa: str = Field(
+        default_factory=lambda: os.environ.get(
+            "MEMEX_TASKS_INVOKER_SA",
+            f"memex-scheduler@{os.environ.get('GOOGLE_CLOUD_PROJECT', 'm4tt-xyz')}"
+            ".iam.gserviceaccount.com",
+        )
+    )
     # Explicit opt-in to skip /internal OIDC verification (local dev only).
     insecure_local: bool = Field(
         default_factory=lambda: os.environ.get("MEMEX_INSECURE_LOCAL", "") == "1"

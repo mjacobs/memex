@@ -131,6 +131,24 @@ a {
   font-weight: 600;
 }
 
+.chat-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.chat-toggle.active {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--surface-2);
+  font-weight: 600;
+}
+
 .app-footer {
   text-align: center;
   padding: 24px 0 8px;
@@ -268,6 +286,11 @@ a {
   color: var(--green);
 }
 
+.badge.research {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
 .badge.pending,
 .badge.running,
 .badge.processing {
@@ -368,6 +391,25 @@ a {
 
 .note-routine.kind-review {
   border-left-color: var(--green);
+}
+
+.note-routine.kind-research {
+  border-left-color: var(--teal);
+}
+
+/* "Research pending" badge line atop the feed while operations run. */
+.research-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ---- detail ---- */
@@ -852,6 +894,138 @@ a {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- chat sidebar ---- */
+.chat-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 400px;
+  max-width: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-panel .error-banner {
+  margin: 10px 14px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-back {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.chat-header-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.chat-sessions {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.chat-new {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.chat-session-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.chat-msg {
+  margin-bottom: 10px;
+}
+
+.chat-msg.user {
+  background: var(--blue-soft);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-left: 32px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.chat-msg.model .markdown {
+  font-size: 14px;
+}
+
+/* Tool calls/results reuse the trace-event card, framed on its own. */
+.chat-tool {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+}
+
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+
+.chat-input input {
+  flex: 1;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 16px;
+  outline: none;
+  min-width: 0;
+}
+
+.chat-input input:focus {
+  border-color: var(--accent);
 }
 
 /* ---- login ---- */

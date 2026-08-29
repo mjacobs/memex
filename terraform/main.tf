@@ -26,6 +26,7 @@ locals {
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
     "pubsub.googleapis.com",
+    "cloudtasks.googleapis.com",
   ]
 }
 

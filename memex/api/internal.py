@@ -61,6 +61,36 @@ async def enrich(request: Request) -> dict:
     return result
 
 
+@router.post("/operations/poll")
+async def operations_poll(request: Request) -> dict:
+    """One Cloud Tasks poll of a durable operation (docs/contracts.md).
+
+    Body {"operation_id": ...}. The operation advances itself — in_progress
+    re-enqueues its own next poll — so this returns 2xx for every settled
+    outcome (running, completed, failed) and non-2xx only for requests Cloud
+    Tasks should redeliver (unknown op racing the Firestore write, crashes).
+    """
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise ApiError(400, "bad_request", "request body is not JSON") from exc
+    operation_id = payload.get("operation_id") if isinstance(payload, dict) else None
+    if not isinstance(operation_id, str) or not operation_id:
+        raise ApiError(400, "bad_request", "operation_id is required")
+    try:
+        from memex.agent.research import poll_operation
+    except ImportError as exc:
+        raise ApiError(
+            503, "agent_unavailable", "research poller is not available"
+        ) from exc
+    # poll_operation is synchronous (aiplatform GET + Firestore + Cloud
+    # Tasks); keep it off the event loop like /internal/enrich does.
+    result = await anyio.to_thread.run_sync(poll_operation, operation_id)
+    if result.get("error"):
+        raise ApiError(404, "not_found", result["error"])
+    return result
+
+
 @router.post("/routines/{routine}/tick")
 def tick(routine: str) -> dict:
     if routine not in get_args(RoutineName):

@@ -13,7 +13,16 @@ from google.cloud import firestore
 from pydantic import BaseModel
 
 from memex.config import settings
-from memex.models import Approval, Capture, Note, RoutineRun, Task
+from memex.models import (
+    Approval,
+    Capture,
+    ChatSession,
+    Note,
+    Operation,
+    RoutineRun,
+    Task,
+    TraceEvent,
+)
 
 COLLECTIONS: dict[type[BaseModel], str] = {
     Capture: "captures",
@@ -21,6 +30,8 @@ COLLECTIONS: dict[type[BaseModel], str] = {
     Task: "tasks",
     Approval: "approvals",
     RoutineRun: "routine_runs",
+    Operation: "operations",
+    ChatSession: "chat_sessions",
 }
 
 
@@ -80,3 +91,40 @@ def query[M: BaseModel](
     if before is not None:
         q = q.start_after({order_by: before})
     return [model.model_validate(s.to_dict()) for s in q.limit(limit).stream()]
+
+
+# --- operations / chat_sessions (agentic-v2) -------------------------------
+# Named helpers so the LRO queue and chat turn paths share one spelling of
+# "touch updated_at" and "append without read-modify-write".
+
+
+def list_operations(status: str | None = None, limit: int = 50) -> list[Operation]:
+    """List operations newest-first, optionally only one status."""
+    filters = [("status", "==", status)] if status is not None else []
+    return query(Operation, filters=filters, limit=limit)
+
+
+def update_operation(operation_id: str, changes: dict) -> None:
+    """Apply changes to an operation, touching updated_at."""
+    update(Operation, operation_id, {**changes, "updated_at": now()})
+
+
+def list_chat_sessions(limit: int = 20) -> list[ChatSession]:
+    """List chat sessions newest-first (traces included; callers elide)."""
+    return query(ChatSession, limit=limit)
+
+
+def append_chat_trace(session_id: str, events: list[TraceEvent]) -> None:
+    """Append turn events to a session's stored trace, touching updated_at.
+
+    Server-side array append (see array_union) so a slow turn and a fast one
+    landing together never drop each other's events.
+    """
+    update(
+        ChatSession,
+        session_id,
+        {
+            "trace": array_union([e.model_dump(mode="python") for e in events]),
+            "updated_at": now(),
+        },
+    )
