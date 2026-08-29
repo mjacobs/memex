@@ -17,10 +17,24 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
 from memex.ids import new_ulid
-from memex.models import Approval, ApprovalAction, Note, Task, TraceEvent, clean_tags
+from memex.models import (
+    Approval,
+    ApprovalAction,
+    Note,
+    Task,
+    TaskStatus,
+    TraceEvent,
+    clean_tags,
+)
 from memex.store import firestore as store
 
 
@@ -36,6 +50,53 @@ class RunContext:
 _run_context: ContextVar[RunContext | None] = ContextVar("memex_run_ctx", default=None)
 
 _action_adapter: TypeAdapter[ApprovalAction] = TypeAdapter(ApprovalAction)
+
+
+class _Patch(BaseModel):
+    """Base for the direct-mutation patches (`update_task`, `update_note`).
+
+    The model hands these tools an untyped dict, so the values are validated
+    before anything is written — otherwise a plausible-looking
+    `{"status": "completed"}` or a non-string body persists and only fails
+    later, on read-back. Unknown fields are rejected, nulls mean "leave
+    alone", and tags are normalized exactly as every other write normalizes
+    them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("tags", mode="after", check_fields=False)
+    @classmethod
+    def _normalize_tags(cls, tags: list[str] | None) -> list[str] | None:
+        return None if tags is None else clean_tags(tags)
+
+    def updates(self) -> dict:
+        """The fields actually being changed — nulls dropped."""
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+class _TaskPatch(_Patch):
+    status: TaskStatus | None = None
+    title: str | None = None
+    tags: list[str] | None = None
+
+
+class _NotePatch(_Patch):
+    summary: str | None = None
+    body: str | None = None
+    tags: list[str] | None = None
+
+
+def _validated(patch: type[_Patch], changes: dict) -> tuple[dict | None, dict | None]:
+    """(updates, error) — the patch's non-null fields, or a tool-shaped error."""
+    try:
+        parsed = patch.model_validate(changes)
+    except ValidationError as exc:
+        return None, {"error": f"invalid changes: {exc.errors(include_url=False)}"}
+    updates = parsed.updates()
+    if not updates:
+        return None, {"error": "no updatable fields given"}
+    return updates, None
 
 
 @contextmanager
@@ -114,13 +175,13 @@ def list_tasks(status: str = "open", limit: int = 100) -> dict:
 def update_task(task_id: str, changes: dict) -> dict:
     """Mutate a task directly. ONLY callable from capture enrichment and
     chat; routines must use queue_approval."""
-    allowed = {"status", "title", "tags"}
-    bad = set(changes) - allowed
-    if bad:
-        return {"error": f"disallowed fields: {sorted(bad)}"}
+    updates, error = _validated(_TaskPatch, changes)
+    if error is not None:
+        return error
+    assert updates is not None
     if store.get(Task, task_id) is None:
         return {"error": f"task {task_id} not found"}
-    store.update(Task, task_id, {**changes, "updated_at": store.now()})
+    store.update(Task, task_id, {**updates, "updated_at": store.now()})
     task = store.get(Task, task_id)
     assert task is not None
     return {"task": task.model_dump(mode="json")}
@@ -176,18 +237,13 @@ def update_note(note_id: str, changes: dict) -> dict:
     Appends a role:"user"-attributed trace event to the note, exactly as
     PATCH /notes/{id} does — the user's live chat instruction is the edit.
     """
-    allowed = {"summary", "body", "tags"}
-    bad = set(changes) - allowed
-    if bad:
-        return {"error": f"disallowed fields: {sorted(bad)}"}
-    updates = {k: v for k, v in changes.items() if v is not None}
-    if not updates:
-        return {"error": "no updatable fields given"}
+    updates, error = _validated(_NotePatch, changes)
+    if error is not None:
+        return error
+    assert updates is not None
     note = store.get(Note, note_id)
     if note is None:
         return {"error": f"note {note_id} not found"}
-    if "tags" in updates:
-        updates["tags"] = clean_tags(updates["tags"])
     changed = [f for f in ("summary", "body", "tags") if f in updates]
     args: dict = {"fields": changed}
     if "tags" in updates:

@@ -6,7 +6,7 @@ tool tests live in test_agent_tools.py.
 
 from memex.agent import tools
 from memex.ids import new_ulid
-from memex.models import Note
+from memex.models import Note, Task
 from memex.store import firestore as store
 
 
@@ -34,6 +34,38 @@ def test_chat_tools_extend_routine_tools():
         tools.search_notes,
         tools.start_research,
     ]
+
+
+def _task(**overrides) -> Task:
+    fields = {
+        "id": new_ulid(),
+        "title": "write the spec",
+        "created_at": store.now(),
+        "updated_at": store.now(),
+        **overrides,
+    }
+    task = Task(**fields)
+    store.put(task)
+    return task
+
+
+def test_update_task_validates_values_before_writing(fs):
+    """An untyped `changes` dict is the model's word, not a contract.
+
+    A plausible-but-wrong status has to be refused up front — persisting it
+    and only failing on read-back leaves an unloadable task behind.
+    """
+    task = _task()
+    assert "error" in tools.update_task(task.id, {"status": "completed"})
+    assert "error" in tools.update_task(task.id, {"title": None})
+    assert "error" in tools.update_task(task.id, {"tags": "groceries"})
+    stored = store.get(Task, task.id)
+    assert stored is not None
+    assert stored.status == "open" and stored.title == "write the spec"
+
+    # Tags are normalized on the way in, like every other tag write.
+    out = tools.update_task(task.id, {"tags": ["Read Later", "read later"]})
+    assert out["task"]["tags"] == ["read-later"]
 
 
 def test_update_note_edits_and_appends_user_trace_event(fs):
