@@ -1,6 +1,9 @@
 import { createElement } from "react";
 
-const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
+// A URL never ends in sentence punctuation, but prose often does: the last
+// character has to be something other than . , ; : ! ? so "See
+// https://example.com/article." links the article, not the period.
+const URL_RE = /(https?:\/\/[^\s<>"')]*[^\s<>"').,;:!?])/g;
 
 function shortenUrl(url) {
   try {

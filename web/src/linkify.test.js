@@ -23,3 +23,12 @@ test("non-web schemes remain plain text", () => {
   assert.doesNotMatch(html, /<a /);
   assert.match(html, /javascript:alert\(1\)/);
 });
+
+test("a trailing period is not part of the link", () => {
+  const html = renderToStaticMarkup(
+    PlainText({ text: "See https://example.com/article." }),
+  );
+
+  assert.match(html, /href="https:\/\/example\.com\/article"/);
+  assert.match(html, />example\.com…<\/a>\.<\/p>$/);
+});
