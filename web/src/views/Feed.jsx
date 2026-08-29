@@ -40,8 +40,12 @@ const PAGE = 50;
 const MAX_PAGES = 10;
 
 // Deep Research runs take minutes; a 15 s poll is timely without hammering
-// the API, and polling stops entirely once nothing is running.
+// the API while something is actually running.
 const OPS_POLL_MS = 15000;
+// Research also starts from chat, which never touches refreshToken — so the
+// poll drops to a slow heartbeat rather than stopping, or a run started
+// elsewhere would show neither its badge nor its report until a reload.
+const OPS_IDLE_POLL_MS = 60000;
 
 /** pendingCaptures: [{id, label, status}] — optimistic entries from the composer. */
 export default function Feed({ pendingCaptures, refreshToken }) {
@@ -74,17 +78,19 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     let alive = true;
     let timer = null;
     async function poll() {
-      let count;
+      let count = null; // null = this poll failed; the badge is best-effort
       try {
         count = (await api.listOperations("running")).operations.length;
       } catch {
-        return; // the badge is best-effort; the feed already surfaces errors
+        // the feed already surfaces its own errors
       }
       if (!alive) return;
-      if (prevRunning.current > 0 && count === 0) setOpsSettled((n) => n + 1);
-      prevRunning.current = count;
-      setRunningOps(count);
-      if (count > 0) timer = setTimeout(poll, OPS_POLL_MS);
+      if (count !== null) {
+        if (prevRunning.current > 0 && count === 0) setOpsSettled((n) => n + 1);
+        prevRunning.current = count;
+        setRunningOps(count);
+      }
+      timer = setTimeout(poll, count ? OPS_POLL_MS : OPS_IDLE_POLL_MS);
     }
     poll();
     return () => {
