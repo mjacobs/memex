@@ -123,6 +123,7 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
       } catch (err) {
         onSettled(tempId);
         onError(err.message);
+        setResearch(research); // give the armed flag back, as the text path does
       }
     };
     recorderRef.current = recorder;
