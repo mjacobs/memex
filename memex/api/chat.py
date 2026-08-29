@@ -10,6 +10,7 @@ the stream is the live view, the stored trace is the record.
 import json
 import logging
 
+import anyio
 import anyio.to_thread
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -77,24 +78,50 @@ async def post_message(session_id: str, body: MessageIn) -> StreamingResponse:
             503, "agent_unavailable", "chat agent is not available"
         ) from exc
 
+    async def persist(events: list[TraceEvent]) -> None:
+        """Record the turn — even when the client hung up mid-stream.
+
+        A disconnect closes the generator with a cancellation, not an
+        Exception, so this runs from the `finally` below under a shielded
+        scope: the tools may already have mutated notes or tasks, and the
+        contract says every mutation lands in the session trace. A failure to
+        persist is logged rather than raised, because by then the stream is
+        already finished or gone.
+        """
+        if not events:
+            return
+        with anyio.CancelScope(shield=True):
+            try:
+                await anyio.to_thread.run_sync(
+                    store.append_chat_trace, session_id, events
+                )
+                if session.title is None:
+                    await anyio.to_thread.run_sync(
+                        store.update,
+                        ChatSession,
+                        session_id,
+                        {"title": text[:TITLE_MAX]},
+                    )
+            except Exception:
+                logger.exception(
+                    "failed to persist chat trace for session %s", session_id
+                )
+
     async def stream():
         events: list[TraceEvent] = []
         failure: Exception | None = None
         try:
-            async for event in run_chat_turn(session_id, text):
-                events.append(event)
-                yield _sse("trace", event.model_dump(mode="json"))
-        except Exception as exc:
-            # The stream is already open (200 sent), so a crashed turn is
-            # reported in-band; whatever the turn did still gets recorded.
-            logger.exception("chat turn failed for session %s", session_id)
-            failure = exc
-        if events:
-            await anyio.to_thread.run_sync(store.append_chat_trace, session_id, events)
-            if session.title is None:
-                await anyio.to_thread.run_sync(
-                    store.update, ChatSession, session_id, {"title": text[:TITLE_MAX]}
-                )
+            try:
+                async for event in run_chat_turn(session_id, text):
+                    events.append(event)
+                    yield _sse("trace", event.model_dump(mode="json"))
+            except Exception as exc:
+                # The stream is already open (200 sent), so a crashed turn is
+                # reported in-band; whatever the turn did still gets recorded.
+                logger.exception("chat turn failed for session %s", session_id)
+                failure = exc
+        finally:
+            await persist(events)
         if failure is not None:
             yield _sse("error", error_body("chat_turn_failed", str(failure)))
             return

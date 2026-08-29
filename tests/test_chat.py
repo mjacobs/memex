@@ -4,6 +4,7 @@ The agent turn is stubbed at the memex.agent.chat seam (same pattern as
 agent_stub for enrichment) — no LLM-output asserts, per tests/ conventions.
 """
 
+import asyncio
 import json
 import sys
 import types
@@ -119,6 +120,33 @@ def test_post_message_streams_trace_then_done(client, chat_stub):
     done = events[-1][1]["session"]
     assert done["id"] == session.id and "trace" not in done
     assert chat_stub == [{"session_id": session.id, "text": "find my gcp notes"}]
+
+
+def test_post_message_records_the_turn_when_the_client_hangs_up(fs, chat_stub):
+    """A disconnect must not lose the audit trace.
+
+    Hanging up closes the response generator with a cancellation rather than
+    an Exception, so the turn's `except` never sees it — but the tools may
+    already have mutated notes or tasks, and contracts.md says every mutation
+    lands in the session trace.
+    """
+    from memex.api.chat import MessageIn, post_message
+
+    session = _session()
+    store.put(session)
+
+    async def hang_up_after_one_frame():
+        response = await post_message(session.id, MessageIn(text="hello"))
+        events = response.body_iterator
+        await events.__anext__()
+        await events.aclose()
+
+    asyncio.run(hang_up_after_one_frame())
+
+    stored = store.get(ChatSession, session.id)
+    assert stored is not None
+    assert [e.text for e in stored.trace] == ["hello"]
+    assert stored.title == "hello"
 
 
 def test_post_message_appends_stored_trace_and_touches_updated_at(client, chat_stub):
