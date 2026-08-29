@@ -33,7 +33,7 @@ def test_classifications_match_the_spec():
     assert tool_policy.classify("create_note") == "write"
     assert tool_policy.classify("update_note") == "write"
     assert tool_policy.classify("update_task") == "write"
-    assert tool_policy.classify("queue_approval") == "write"
+    assert tool_policy.classify("queue_approval") == "propose"
     assert tool_policy.classify("start_research") == "external"
 
 
@@ -49,6 +49,20 @@ def test_reads_run_and_the_rest_ask():
     assert not tool_policy.requires_confirmation("list_tasks")
     assert tool_policy.requires_confirmation("update_task")
     assert tool_policy.requires_confirmation("start_research")
+
+
+def test_proposing_always_runs():
+    """queue_approval parks a change; the approve endpoint is the gate.
+
+    Confirming it would gate the safe path twice, and it is the one mutation
+    route routines keep when write and external resolve to deny — so it runs
+    in every mode, with or without session trust.
+    """
+    assert tool_policy.classify("queue_approval") == "propose"
+    assert tool_policy.resolve("queue_approval") == "allow"
+    assert tool_policy.resolve("queue_approval", {"queue_approval"}) == "allow"
+    assert tool_policy.resolve("queue_approval", {"update_note"}) == "allow"
+    assert not tool_policy.requires_confirmation("queue_approval")
 
 
 def test_session_trust_downgrades_an_asking_tool():

@@ -21,8 +21,13 @@ from memex.agent.tools import CHAT_TOOLS
 # What a call can cost. `read` returns stored data and changes nothing;
 # `write` mutates the user's memex; `external` leaves the machine — it spends
 # money and hands a note to another service, so it is worth asking about even
-# though it writes nothing directly.
-Classification = Literal["read", "write", "external"]
+# though it writes nothing directly. `propose` only parks a change for a human
+# to sign off: the mutation happens later, in the server-side approve
+# endpoint, which is where the gate already sits. Confirming a proposal would
+# gate the safe path twice, and denying one in a headless session would take
+# away the only mutation route routines are allowed — so `propose` runs in
+# every mode.
+Classification = Literal["read", "write", "external", "propose"]
 
 # What the policy decides to do about a call. `deny` is unused by chat today
 # and exists because routines are the same policy with a different answer:
@@ -36,9 +41,7 @@ _CLASSIFICATIONS: dict[str, Classification] = {
     "create_note": "write",
     "update_note": "write",
     "update_task": "write",
-    # A proposal, not a mutation — but it still lands a durable doc the user
-    # has to triage, so it is classed with the writes rather than the reads.
-    "queue_approval": "write",
+    "queue_approval": "propose",
     "start_research": "external",
 }
 
@@ -46,6 +49,7 @@ _DEFAULT_PERMISSIONS: dict[Classification, Permission] = {
     "read": "allow",
     "write": "ask",
     "external": "ask",
+    "propose": "allow",
 }
 
 
