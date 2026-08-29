@@ -31,6 +31,22 @@ def test_chat_session_model_defaults():
     assert session.trace == []
 
 
+def test_transition_operation_is_a_compare_and_set(fs):
+    op = _operation("running")
+    store.put(op)
+
+    assert store.transition_operation(op.id, "running", {"attempts": 1}) is True
+    updated = store.get(Operation, op.id)
+    assert updated is not None and updated.attempts == 1
+
+    # The losing delivery of the same at-least-once poll: the operation is no
+    # longer in the status it read, so its write is refused.
+    assert store.transition_operation(op.id, "queued", {"attempts": 99}) is False
+    assert store.transition_operation("nonexistent", "running", {"attempts": 1}) is False
+    still = store.get(Operation, op.id)
+    assert still is not None and still.attempts == 1
+
+
 def test_list_operations_filters_by_status(fs):
     running = _operation("running")
     done = _operation("completed")

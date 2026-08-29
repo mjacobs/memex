@@ -326,8 +326,13 @@ def _interaction_error(interaction: dict) -> str:
     return f"interaction ended with status {interaction.get('status')!r}"
 
 
-def _write_research_note(op: Operation, interaction: dict) -> Note:
-    """Write the `research` note the completed interaction produced."""
+def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note:
+    """Write the `research` note the completed interaction produced.
+
+    `note_id` is reserved on the operation before this runs, so a retry after
+    a crash mid-completion rewrites the same document instead of adding a
+    second report to the feed.
+    """
     steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
     report = _report_from_steps(steps)
     source = store.get(Note, op.source_note_id)
@@ -339,7 +344,7 @@ def _write_research_note(op: Operation, interaction: dict) -> Note:
     if source is not None:
         tags += [t for t in source.tags if t not in (RESEARCH_TAG, RESEARCH_REPORT_TAG)]
     note = Note(
-        id=new_ulid(),
+        id=note_id,
         created_at=store.now(),
         kind="research",
         source_note_id=op.source_note_id,
@@ -350,6 +355,13 @@ def _write_research_note(op: Operation, interaction: dict) -> Note:
     )
     store.put(note)
     return note
+
+
+def _deduped(op: Operation) -> dict:
+    """The reply for a poll another delivery already handled — the operation
+    as it now stands, re-read so the caller sees the winner's outcome."""
+    current = store.get(Operation, op.id) or op
+    return {"operation_id": current.id, "status": current.status, "deduped": True}
 
 
 def poll_operation(operation_id: str) -> dict:
@@ -365,7 +377,7 @@ def poll_operation(operation_id: str) -> dict:
         return {"error": f"operation {operation_id} not found"}
     if op.status != "running":
         # Cloud Tasks delivery is at-least-once; a settled operation is done.
-        return {"operation_id": op.id, "status": op.status, "deduped": True}
+        return _deduped(op)
     attempts = op.attempts + 1
     try:
         interaction = _get_interaction(op.interaction_id)
@@ -380,15 +392,27 @@ def poll_operation(operation_id: str) -> dict:
     if status == "in_progress":
         if attempts >= MAX_ATTEMPTS:
             error = f"gave up after {attempts} polls"
-            store.update_operation(
-                op.id, {"status": "failed", "attempts": attempts, "error": error}
-            )
+            if not store.transition_operation(
+                op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
+            ):
+                return _deduped(op)
             return {"operation_id": op.id, "status": "failed", "error": error}
-        store.update_operation(op.id, {"attempts": attempts})
+        if not store.transition_operation(op.id, "running", {"attempts": attempts}):
+            # Another delivery of this poll already re-enqueued the next one.
+            return _deduped(op)
         _enqueue_poll(op.id)
         return {"operation_id": op.id, "status": "running", "attempts": attempts}
     if status == "completed":
-        note = _write_research_note(op, interaction)
+        # Reserve the report note's id on the operation first, and only then
+        # write the note and settle: two deliveries racing here both end up
+        # writing the same document id, and a crash between the note and the
+        # settle replays onto that same id instead of adding a second report.
+        note_id = op.result_note_id or new_ulid()
+        if op.result_note_id is None and not store.transition_operation(
+            op.id, "running", {"result_note_id": note_id}
+        ):
+            return _deduped(op)
+        note = _write_research_note(op, interaction, note_id)
         store.update_operation(
             op.id,
             {"status": "completed", "attempts": attempts, "result_note_id": note.id},
@@ -399,7 +423,8 @@ def poll_operation(operation_id: str) -> dict:
             "result_note_id": note.id,
         }
     error = _interaction_error(interaction)
-    store.update_operation(
-        op.id, {"status": "failed", "attempts": attempts, "error": error}
-    )
+    if not store.transition_operation(
+        op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
+    ):
+        return _deduped(op)
     return {"operation_id": op.id, "status": "failed", "error": error}

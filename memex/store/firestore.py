@@ -9,6 +9,7 @@ docs/contracts.md. Uses the emulator when FIRESTORE_EMULATOR_HOST is set
 from datetime import UTC, datetime
 from functools import lru_cache
 
+from google.api_core.exceptions import FailedPrecondition
 from google.cloud import firestore
 from pydantic import BaseModel
 
@@ -107,6 +108,31 @@ def list_operations(status: str | None = None, limit: int = 50) -> list[Operatio
 def update_operation(operation_id: str, changes: dict) -> None:
     """Apply changes to an operation, touching updated_at."""
     update(Operation, operation_id, {**changes, "updated_at": now()})
+
+
+def transition_operation(
+    operation_id: str, expected_status: str, changes: dict
+) -> bool:
+    """Compare-and-set one operation transition; True when this caller won.
+
+    Cloud Tasks delivery is at-least-once, so two deliveries of the same poll
+    can both read an operation as `running` and both try to advance it. The
+    write carries a last_update_time precondition, so it only lands on the
+    document exactly as it was read: the second delivery gets False and
+    leaves the operation alone.
+    """
+    ref = db().collection(COLLECTIONS[Operation]).document(operation_id)
+    snap = ref.get()
+    if not snap.exists or (snap.to_dict() or {}).get("status") != expected_status:
+        return False
+    try:
+        ref.update(
+            {**changes, "updated_at": now()},
+            option=db().write_option(last_update_time=snap.update_time),
+        )
+    except FailedPrecondition:
+        return False
+    return True
 
 
 def list_chat_sessions(limit: int = 20) -> list[ChatSession]:

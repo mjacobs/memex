@@ -392,6 +392,38 @@ def test_poll_settled_operation_is_idempotent(fs, enqueued, monkeypatch):
     assert enqueued == []
 
 
+def test_poll_replays_onto_the_reserved_report_note(fs, enqueued, monkeypatch):
+    """A retry after a crash mid-completion must not add a second report.
+
+    The operation carries the report note's id from before the crash, so the
+    replayed poll rewrites that same document instead of writing a new one.
+    """
+    source = _make_note(tags=["research"])
+    reserved = new_ulid()
+    op = _make_operation(source_note_id=source.id, result_note_id=reserved)
+    monkeypatch.setattr(
+        research,
+        "_get_interaction",
+        lambda iid: {
+            "status": "completed",
+            "steps": [{"type": "model_output", "content": [{"text": "report"}]}],
+        },
+    )
+
+    out = research.poll_operation(op.id)
+
+    assert out["result_note_id"] == reserved
+    reports = [n for n in store.query(Note, limit=50) if n.kind == "research"]
+    assert [n.id for n in reports] == [reserved]
+
+    # And the delivery that lost the race sees the settled operation, not a
+    # second run of the completion path.
+    again = research.poll_operation(op.id)
+    assert again["status"] == "completed" and again["deduped"]
+    reports = [n for n in store.query(Note, limit=50) if n.kind == "research"]
+    assert [n.id for n in reports] == [reserved]
+
+
 def test_poll_unknown_operation_errors(fs):
     out = research.poll_operation(new_ulid())
     assert "not found" in out["error"]

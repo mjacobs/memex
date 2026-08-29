@@ -2,19 +2,29 @@
 
 Implements just the surface memex.store.firestore uses: collection ->
 document(set/get/update) and collection -> where/order_by/start_after/
-limit/stream. Used when FIRESTORE_EMULATOR_HOST is unset.
+limit/stream, plus write_option(last_update_time=...) preconditions (the
+operations CAS). Used when FIRESTORE_EMULATOR_HOST is unset.
 """
 
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
+from google.api_core.exceptions import FailedPrecondition
 from google.cloud.firestore_v1.transforms import ArrayUnion
+
+
+@dataclass
+class FakeWriteOption:
+    """What client.write_option(last_update_time=...) hands back."""
+
+    last_update_time: object
 
 
 @dataclass
 class FakeSnapshot:
     exists: bool
     _data: dict | None
+    update_time: object = None
 
     def to_dict(self) -> dict | None:
         return deepcopy(self._data) if self._data is not None else None
@@ -27,14 +37,23 @@ class FakeDocument:
 
     def set(self, data: dict) -> None:
         self._collection.docs[self._id] = deepcopy(data)
+        self._collection.touch(self._id)
 
     def get(self) -> FakeSnapshot:
         data = self._collection.docs.get(self._id)
-        return FakeSnapshot(exists=data is not None, _data=data)
+        return FakeSnapshot(
+            exists=data is not None,
+            _data=data,
+            update_time=self._collection.times.get(self._id),
+        )
 
-    def update(self, changes: dict) -> None:
+    def update(self, changes: dict, option: FakeWriteOption | None = None) -> None:
         if self._id not in self._collection.docs:
             raise KeyError(f"no document {self._id}")
+        if option is not None and option.last_update_time != self._collection.times.get(
+            self._id
+        ):
+            raise FailedPrecondition("document changed since it was read")
         doc = self._collection.docs[self._id]
         for key, value in deepcopy(changes).items():
             if isinstance(value, ArrayUnion):
@@ -43,9 +62,11 @@ class FakeDocument:
                 doc[key] = existing + [v for v in value.values if v not in existing]
             else:
                 doc[key] = value
+        self._collection.touch(self._id)
 
     def delete(self) -> None:
         self._collection.docs.pop(self._id, None)
+        self._collection.times.pop(self._id, None)
 
 
 def _matches(doc: dict, field_path: str, op: str, value: object) -> bool:
@@ -106,6 +127,14 @@ class FakeQuery:
 class FakeCollection:
     def __init__(self):
         self.docs: dict[str, dict] = {}
+        # Stand-in for Firestore's per-document update_time: a strictly
+        # increasing counter is all a last_update_time precondition compares.
+        self.times: dict[str, int] = {}
+        self._clock = 0
+
+    def touch(self, doc_id: str) -> None:
+        self._clock += 1
+        self.times[doc_id] = self._clock
 
     def document(self, doc_id: str) -> FakeDocument:
         return FakeDocument(self, doc_id)
@@ -123,3 +152,6 @@ class FakeFirestoreClient:
 
     def collection(self, name: str) -> FakeCollection:
         return self._collections.setdefault(name, FakeCollection())
+
+    def write_option(self, **kwargs) -> FakeWriteOption:
+        return FakeWriteOption(last_update_time=kwargs.get("last_update_time"))
