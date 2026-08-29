@@ -70,6 +70,19 @@ resource "google_cloud_run_v2_service" "app" {
         value = google_storage_bucket.images.name
       }
 
+      # The durable-operations queue lives in var.region (cloud_tasks.tf);
+      # without this the app looks for it in config.py's us-central1 default
+      # and every research enqueue fails in any other region.
+      env {
+        name  = "MEMEX_TASKS_LOCATION"
+        value = var.region
+      }
+
+      env {
+        name  = "MEMEX_TASKS_QUEUE"
+        value = google_cloud_tasks_queue.operations.name
+      }
+
       # OIDC audience for /internal/* verification (deterministic URL,
       # see main.tf).
       env {
