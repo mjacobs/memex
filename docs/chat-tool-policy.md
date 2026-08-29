@@ -3,10 +3,11 @@
 **Size class:** architectural · **Merge path:** local `main` in this repo
 (commits only when Matt asks) · **Reviewer:** Matt + a whole-branch roborev
 pass before anything is pushed · **Kill criterion:** the hackathon closes
-**Sun Aug 31, 5 PM PT** and this is not a judged feature. If step 3 (durable
-ADK sessions) is not working by **Sun morning**, stop and ship the one-line
-fallback in "If we run out of time" instead — a half-built confirmation flow
-is worse than none.
+**Mon Aug 31, 5 PM PT** and this is not a judged feature. The demo video is
+recorded Sunday, so the cutoff comes earlier than the deadline: if step 3
+(durable ADK sessions) is not working by **Sun morning**, stop and ship the
+one-line fallback in "If we run out of time" instead — a half-built
+confirmation flow is worse than none.
 
 Today a poisoned web page can edit your notes. When chat answers a question
 about a saved link, the page's text comes back through `search_notes` into the
@@ -208,5 +209,5 @@ seed exactly as it does today.
 The one-line version of this spec's security benefit is to drop `update_note`,
 `update_task` and `start_research` from `CHAT_TOOLS`, leaving chat read-only
 and routing every change through the approval queue that already exists. It is
-worse to use and it is one commit. Given the Sunday deadline, that is the
+worse to use and it is one commit. Given the Monday deadline, that is the
 honest fallback.
