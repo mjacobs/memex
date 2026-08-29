@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-CaptureSource = Literal["ios", "desktop", "web", "api"]
+CaptureSource = Literal["ios", "desktop", "web", "android", "api"]
 CaptureKind = Literal["text", "audio", "image", "link"]
 CaptureStatus = Literal["pending", "processing", "enriched", "failed"]
 NoteKind = Literal["capture", "digest", "review", "link", "research"]

@@ -28,6 +28,14 @@ def test_text_capture_happy_path(client, agent_stub):
     assert agent_stub["enrich"] == [body["capture"]["id"]]
 
 
+def test_text_capture_accepts_android_source(client, agent_stub):
+    r = client.post(
+        "/api/v1/capture", json={"text": "x", "source": "android"}, headers=AUTH
+    )
+    assert r.status_code == 201
+    assert r.json()["capture"]["source"] == "android"
+
+
 def test_text_capture_unknown_source_falls_back_to_api(client, agent_stub):
     r = client.post(
         "/api/v1/capture", json={"text": "x", "source": "toaster"}, headers=AUTH
