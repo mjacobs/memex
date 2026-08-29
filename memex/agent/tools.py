@@ -70,6 +70,15 @@ class _Patch(BaseModel):
     def _normalize_tags(cls, tags: list[str] | None) -> list[str] | None:
         return None if tags is None else clean_tags(tags)
 
+    @field_validator("title", "summary", "body", mode="after", check_fields=False)
+    @classmethod
+    def _reject_blank(cls, value: str | None) -> str | None:
+        # Null means "leave alone"; an empty string would blank the field out,
+        # which is never what the model meant to ask for.
+        if value is not None and not value.strip():
+            raise ValueError("must not be empty")
+        return value
+
     def updates(self) -> dict:
         """The fields actually being changed — nulls dropped."""
         return {k: v for k, v in self.model_dump().items() if v is not None}

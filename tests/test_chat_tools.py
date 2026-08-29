@@ -91,6 +91,22 @@ def test_update_note_rejects_bad_input(fs):
     assert "error" in tools.update_note(note.id, {"summary": None})
 
 
+def test_patches_refuse_to_blank_a_field(fs):
+    """An empty string is not an edit — it would erase the field."""
+    task = _task()
+    assert "error" in tools.update_task(task.id, {"title": ""})
+    assert "error" in tools.update_task(task.id, {"title": "   "})
+    stored = store.get(Task, task.id)
+    assert stored is not None and stored.title == "write the spec"
+
+    note = _note()
+    assert "error" in tools.update_note(note.id, {"body": ""})
+    assert "error" in tools.update_note(note.id, {"summary": "  "})
+    kept = store.get(Note, note.id)
+    assert kept is not None
+    assert kept.body == "remember the milk" and kept.summary == "Buy milk."
+
+
 def test_search_notes_matches_substring_and_tag(fs):
     milk = _note()
     tagged = _note(body="water the plants", summary="Garden.", tags=["home"])
