@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="880" viewBox="0 0 1520 880" font-family="DejaVu Sans, Verdana, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="1100" viewBox="0 0 1420 1100" font-family="DejaVu Sans, Verdana, sans-serif">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
@@ -9,140 +9,217 @@
     <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
     </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7e22ce"/>
+    </marker>
   </defs>
 
-  <rect width="1520" height="880" fill="#ffffff"/>
-  <text x="40" y="48" font-size="26" font-weight="bold" fill="#0f172a">memex — voice/text capture agent on Google Cloud</text>
-  <text x="40" y="74" font-size="15" fill="#475569">everything scales to zero: Cloud Run min-instances = 0, pay-per-use Firestore / GCS / Gemini</text>
+  <rect width="1420" height="1100" fill="#ffffff"/>
+  <text x="40" y="48" font-size="26" font-weight="bold" fill="#0f172a">memex — personal capture agent on Google Cloud</text>
+  <text x="40" y="74" font-size="15" fill="#475569">one Cloud Run container; everything scales to zero (min-instances = 0, pay-per-use Firestore / GCS / Gemini / Tasks)</text>
 
   <!-- ===================== Clients column ===================== -->
-  <text x="40" y="128" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">CAPTURE CLIENTS</text>
+  <text x="40" y="122" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">CAPTURE CLIENTS · Bearer device key</text>
   <g>
-    <rect x="40" y="140" width="240" height="74" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-    <text x="58" y="168" font-size="15" font-weight="bold" fill="#1e3a8a">iOS Shortcut</text>
-    <text x="58" y="190" font-size="13" fill="#334155">record → POST audio/mp4</text>
+    <rect x="40" y="134" width="240" height="64" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="160" font-size="15" font-weight="bold" fill="#1e3a8a">iOS Shortcut</text>
+    <text x="58" y="182" font-size="13" fill="#334155">Action Button → /capture/audio</text>
   </g>
   <g>
-    <rect x="40" y="228" width="240" height="74" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-    <text x="58" y="256" font-size="15" font-weight="bold" fill="#1e3a8a">Desktop hotkey</text>
-    <text x="58" y="278" font-size="13" fill="#334155">ffmpeg wav → POST audio/wav</text>
+    <rect x="40" y="206" width="240" height="64" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="232" font-size="15" font-weight="bold" fill="#1e3a8a">Desktop hotkey</text>
+    <text x="58" y="254" font-size="13" fill="#334155">ffmpeg wav → /capture/audio</text>
   </g>
   <g>
-    <rect x="40" y="316" width="240" height="90" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-    <text x="58" y="344" font-size="15" font-weight="bold" fill="#1e3a8a">React SPA (web)</text>
-    <text x="58" y="366" font-size="13" fill="#334155">text capture · feed · tasks</text>
-    <text x="58" y="386" font-size="13" fill="#334155">approvals · routine runs</text>
+    <rect x="40" y="278" width="240" height="86" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="304" font-size="15" font-weight="bold" fill="#1e3a8a">Android app (native)</text>
+    <text x="58" y="326" font-size="13" fill="#334155">voice · photo · text · share</text>
+    <text x="58" y="346" font-size="13" fill="#334155">feed · tasks · approvals · chat</text>
   </g>
   <g>
-    <rect x="40" y="430" width="240" height="58" rx="10" fill="#fefce8" stroke="#facc15" stroke-width="1.5"/>
-    <text x="58" y="454" font-size="14" font-weight="bold" fill="#713f12">Secret Manager</text>
-    <text x="58" y="474" font-size="13" fill="#334155">per-device bearer keys</text>
+    <rect x="40" y="372" width="240" height="86" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="398" font-size="15" font-weight="bold" fill="#1e3a8a">Snippy (Chrome)</text>
+    <text x="58" y="420" font-size="13" fill="#334155">annotated screenshot + page URL</text>
+    <text x="58" y="440" font-size="13" fill="#334155">→ POST /capture/image</text>
+  </g>
+  <g>
+    <rect x="40" y="466" width="240" height="86" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="492" font-size="15" font-weight="bold" fill="#1e3a8a">Tabby (Chrome)</text>
+    <text x="58" y="514" font-size="13" fill="#334155">stashed tabs → read-later notes</text>
+    <text x="58" y="534" font-size="13" fill="#334155">→ POST /capture/links (≤ 20)</text>
+  </g>
+  <g>
+    <rect x="40" y="560" width="240" height="86" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="58" y="586" font-size="15" font-weight="bold" fill="#1e3a8a">React SPA (web)</text>
+    <text x="58" y="608" font-size="13" fill="#334155">text capture · feed · tasks</text>
+    <text x="58" y="628" font-size="13" fill="#334155">approvals · runs · chat sidebar</text>
   </g>
 
   <!-- client arrows into Cloud Run -->
-  <path d="M280,177 L392,177" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
-  <path d="M280,265 L392,265" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
-  <path d="M280,361 L392,361" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
-  <text x="290" y="160" font-size="12" fill="#64748b">Bearer key</text>
+  <path d="M280,166 L362,190" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M280,238 L362,215" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M280,321 L362,240" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M280,415 L362,265" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M280,509 L362,290" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M280,603 L362,315" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
 
   <!-- ===================== Cloud Run ===================== -->
-  <rect x="392" y="120" width="420" height="430" rx="14" fill="#f8fafc" stroke="#334155" stroke-width="2"/>
-  <text x="412" y="152" font-size="17" font-weight="bold" fill="#0f172a">Cloud Run · memex</text>
-  <text x="412" y="172" font-size="13" fill="#475569">one container, min-instances = 0</text>
+  <rect x="370" y="120" width="440" height="512" rx="14" fill="#f8fafc" stroke="#334155" stroke-width="2"/>
+  <text x="392" y="152" font-size="17" font-weight="bold" fill="#0f172a">Cloud Run · memex</text>
+  <text x="392" y="172" font-size="13" fill="#475569">one container: API + agent + built SPA, min-instances = 0</text>
 
-  <rect x="412" y="188" width="380" height="86" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="428" y="212" font-size="14" font-weight="bold" fill="#0f172a">FastAPI</text>
-  <text x="428" y="232" font-size="13" fill="#334155">/api/v1: capture · notes · tasks · approvals · runs</text>
-  <text x="428" y="252" font-size="13" fill="#334155">serves the built React SPA at /</text>
+  <rect x="390" y="188" width="400" height="106" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="408" y="212" font-size="14" font-weight="bold" fill="#0f172a">FastAPI · /api/v1 (bearer key)</text>
+  <text x="408" y="233" font-size="13" fill="#334155">capture (text · audio · image · link · links)</text>
+  <text x="408" y="252" font-size="13" fill="#334155">notes · tasks · approvals · runs · operations</text>
+  <text x="408" y="271" font-size="13" fill="#334155">chat sessions + messages (SSE stream)</text>
+  <text x="408" y="288" font-size="13" fill="#334155">serves the built React SPA at /</text>
 
-  <rect x="412" y="288" width="380" height="106" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="428" y="312" font-size="14" font-weight="bold" fill="#0f172a">Agent (Gemini tool loop)</text>
-  <text x="428" y="332" font-size="13" fill="#334155">enrichment: audio/text → transcript, summary,</text>
-  <text x="428" y="350" font-size="13" fill="#334155">tags, tasks, trace — one structured Gemini call</text>
-  <text x="428" y="370" font-size="13" fill="#334155">routines: multi-step tool loop over notes/tasks</text>
+  <rect x="390" y="306" width="400" height="150" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="408" y="330" font-size="14" font-weight="bold" fill="#0f172a">Agent — Google ADK + Gemini</text>
+  <text x="408" y="352" font-size="13" fill="#334155">enrichment: audio / image / text / link →</text>
+  <text x="408" y="370" font-size="13" fill="#334155">transcript, summary, tags, tasks, trace</text>
+  <text x="408" y="392" font-size="13" fill="#334155">routines: tool loop; propose-only toolset</text>
+  <text x="408" y="410" font-size="13" fill="#334155">chat: same tools + direct mutation, streamed</text>
+  <text x="408" y="432" font-size="13" fill="#334155">every turn's tool calls stored as a trace</text>
+  <text x="408" y="450" font-size="13" fill="#334155">(models: Gemini 3.7 Flash / 3.5 Flash-Lite)</text>
 
-  <rect x="412" y="408" width="380" height="120" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-  <text x="428" y="432" font-size="14" font-weight="bold" fill="#7c2d12">/internal/* (no public access)</text>
-  <text x="428" y="452" font-size="13" fill="#334155">OIDC token verify: audience set +</text>
-  <text x="428" y="470" font-size="13" fill="#334155">invoker service-account allowlist</text>
-  <text x="428" y="494" font-size="13" fill="#334155">/internal/enrich ← Eventarc</text>
-  <text x="428" y="512" font-size="13" fill="#334155">/internal/routines/&lt;name&gt; ← Cloud Scheduler</text>
+  <rect x="390" y="468" width="400" height="146" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="408" y="492" font-size="14" font-weight="bold" fill="#7c2d12">/internal/* — no public access</text>
+  <text x="408" y="513" font-size="13" fill="#334155">bearer keys refused; Google-signed OIDC only</text>
+  <text x="408" y="531" font-size="13" fill="#334155">(audience + invoker allowlist, fail closed)</text>
+  <text x="408" y="554" font-size="13" fill="#334155">/internal/enrich ← Eventarc</text>
+  <text x="408" y="572" font-size="13" fill="#334155">/internal/routines/&lt;name&gt; ← Cloud Scheduler</text>
+  <text x="408" y="590" font-size="13" fill="#334155">/internal/operations/poll ← Cloud Tasks</text>
 
   <!-- ===================== Right column ===================== -->
-  <text x="1000" y="128" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">STATE &amp; MODEL</text>
+  <text x="1020" y="122" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">STATE &amp; MODEL</text>
   <g>
-    <rect x="1000" y="140" width="300" height="128" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
-    <text x="1018" y="168" font-size="15" font-weight="bold" fill="#14532d">Firestore</text>
-    <text x="1018" y="190" font-size="13" fill="#334155">notes · tasks · captures · approvals</text>
-    <text x="1018" y="208" font-size="13" fill="#334155">routine runs (each with full trace)</text>
-    <text x="1018" y="230" font-size="13" fill="#334155">ULID ids; 8 composite indexes for</text>
-    <text x="1018" y="248" font-size="13" fill="#334155">filtered, ULID-ordered queries</text>
+    <rect x="1020" y="134" width="340" height="152" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+    <text x="1038" y="160" font-size="15" font-weight="bold" fill="#14532d">Firestore — system of record</text>
+    <text x="1038" y="182" font-size="13" fill="#334155">captures · notes · tasks · approvals</text>
+    <text x="1038" y="200" font-size="13" fill="#334155">routine_runs · operations · chat_sessions</text>
+    <text x="1038" y="222" font-size="13" fill="#334155">ULID ids — id order is feed order</text>
+    <text x="1038" y="240" font-size="13" fill="#334155">composite indexes for filtered queries</text>
+    <text x="1038" y="262" font-size="13" fill="#334155">traces stored on notes, runs, chat sessions</text>
+    <text x="1038" y="278" font-size="13" fill="#334155">operations settle by compare-and-set</text>
   </g>
   <g>
-    <rect x="1000" y="288" width="300" height="66" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
-    <text x="1018" y="314" font-size="15" font-weight="bold" fill="#14532d">GCS bucket</text>
-    <text x="1018" y="336" font-size="13" fill="#334155">raw audio captures</text>
+    <rect x="1020" y="302" width="340" height="62" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+    <text x="1038" y="328" font-size="15" font-weight="bold" fill="#14532d">GCS · audio bucket</text>
+    <text x="1038" y="350" font-size="13" fill="#334155">raw recordings, 30-day lifecycle</text>
   </g>
   <g>
-    <rect x="1000" y="374" width="300" height="66" rx="10" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
-    <text x="1018" y="400" font-size="15" font-weight="bold" fill="#581c87">Gemini API</text>
-    <text x="1018" y="422" font-size="13" fill="#334155">hears audio natively — no separate STT</text>
+    <rect x="1020" y="380" width="340" height="62" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+    <text x="1038" y="406" font-size="15" font-weight="bold" fill="#14532d">GCS · images bucket</text>
+    <text x="1038" y="428" font-size="13" fill="#334155">screenshots, separate trigger + IAM</text>
+  </g>
+  <g>
+    <rect x="1020" y="458" width="340" height="128" rx="10" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
+    <text x="1038" y="484" font-size="15" font-weight="bold" fill="#581c87">Vertex AI · Gemini</text>
+    <text x="1038" y="506" font-size="13" fill="#334155">hears audio and reads images natively —</text>
+    <text x="1038" y="524" font-size="13" fill="#334155">no separate speech-to-text or OCR</text>
+    <text x="1038" y="546" font-size="13" font-weight="bold" fill="#581c87">Deep Research (interactions API)</text>
+    <text x="1038" y="564" font-size="13" fill="#334155">background run, minutes to ~1 hour,</text>
+    <text x="1038" y="580" font-size="13" fill="#334155">durable server-side handle, polled by id</text>
+  </g>
+  <g>
+    <rect x="1020" y="602" width="340" height="62" rx="10" fill="#fefce8" stroke="#facc15" stroke-width="1.5"/>
+    <text x="1038" y="628" font-size="15" font-weight="bold" fill="#713f12">Secret Manager</text>
+    <text x="1038" y="650" font-size="13" fill="#334155">memex-device-keys — one JSON secret</text>
   </g>
 
   <!-- Cloud Run <-> right column arrows -->
-  <path d="M812,220 L992,204" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-  <text x="840" y="196" font-size="12" fill="#64748b">read/write state</text>
-  <path d="M812,321 L992,321" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
-  <text x="840" y="313" font-size="12" fill="#64748b">audio upload</text>
-  <path d="M812,360 L992,404" stroke="#7e22ce" stroke-width="2" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-  <text x="840" y="392" font-size="12" fill="#7e22ce">model calls + tool results</text>
+  <path d="M810,222 L1012,206" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text x="840" y="196" font-size="12" fill="#64748b">read / write state</text>
+  <path d="M810,262 L1012,330" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <text x="840" y="300" font-size="12" fill="#64748b">audio / image upload</text>
+  <path d="M810,286 L1012,406" stroke="#475569" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M810,400 L1012,500" stroke="#7e22ce" stroke-width="2" fill="none" marker-end="url(#arrowPurple)" marker-start="url(#arrowPurple)"/>
+  <text x="826" y="444" font-size="12" fill="#7e22ce">model calls + tool results</text>
+  <path d="M810,600 L1012,630" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text x="826" y="628" font-size="12" fill="#64748b">device keys at startup</text>
 
-  <!-- ===================== Async triggers (bottom) ===================== -->
-  <text x="40" y="612" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">ASYNC TRIGGERS (OIDC-AUTHENTICATED PUSH)</text>
+  <!-- ===================== Async triggers (bottom left) ===================== -->
+  <text x="40" y="690" font-size="14" font-weight="bold" fill="#64748b" letter-spacing="1">ASYNC TRIGGERS · OIDC-AUTHENTICATED PUSH</text>
 
   <g>
-    <rect x="40" y="626" width="300" height="88" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-    <text x="58" y="654" font-size="15" font-weight="bold" fill="#7c2d12">Eventarc</text>
-    <text x="58" y="676" font-size="13" fill="#334155">GCS object finalized →</text>
-    <text x="58" y="694" font-size="13" fill="#334155">push to /internal/enrich (~10 s e2e)</text>
+    <rect x="40" y="702" width="310" height="84" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="58" y="728" font-size="15" font-weight="bold" fill="#7c2d12">Eventarc ×2</text>
+    <text x="58" y="750" font-size="13" fill="#334155">GCS object finalized (audio, images)</text>
+    <text x="58" y="770" font-size="13" fill="#334155">→ /internal/enrich · ~10 s end to end</text>
   </g>
   <g>
-    <rect x="40" y="734" width="300" height="106" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
-    <text x="58" y="762" font-size="15" font-weight="bold" fill="#7c2d12">Cloud Scheduler</text>
-    <text x="58" y="784" font-size="13" fill="#334155">daily_review — 09:00 PT</text>
-    <text x="58" y="802" font-size="13" fill="#334155">nightly_digest — 03:00 PT</text>
-    <text x="58" y="824" font-size="13" fill="#334155">→ push to /internal/routines/&lt;name&gt;</text>
+    <rect x="40" y="802" width="310" height="102" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="58" y="828" font-size="15" font-weight="bold" fill="#7c2d12">Cloud Scheduler ×2</text>
+    <text x="58" y="850" font-size="13" fill="#334155">daily_review — 09:00 PT</text>
+    <text x="58" y="868" font-size="13" fill="#334155">nightly_digest — 03:00 PT</text>
+    <text x="58" y="888" font-size="13" fill="#334155">→ /internal/routines/&lt;name&gt;</text>
+  </g>
+  <g>
+    <rect x="40" y="920" width="310" height="112" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="58" y="946" font-size="15" font-weight="bold" fill="#7c2d12">Cloud Tasks · memex-operations</text>
+    <text x="58" y="968" font-size="13" fill="#334155">one task per pending research run</text>
+    <text x="58" y="986" font-size="13" fill="#334155">→ /internal/operations/poll</text>
+    <text x="58" y="1006" font-size="13" fill="#334155">re-enqueues itself at +30 s, cap 240</text>
+    <text x="58" y="1024" font-size="13" font-weight="bold" fill="#7c2d12">at-least-once: every step is a CAS</text>
   </g>
 
   <!-- trigger arrows into /internal -->
-  <path d="M340,670 C480,670 520,590 555,552" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrowAmber)"/>
-  <path d="M340,787 C540,787 600,620 640,552" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M350,744 C420,744 440,680 452,620" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M350,853 C480,853 520,700 540,620" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M350,976 C560,976 620,720 636,620" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#arrowAmber)"/>
+  <!-- Cloud Run enqueues the first poll -->
   <!-- GCS event source arrow -->
-  <path d="M1018,354 C1000,480 600,560 348,650" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" fill="none" marker-end="url(#arrow)"/>
-  <text x="700" y="586" font-size="12" fill="#64748b">object-finalized event</text>
+  <path d="M1030,442 C1000,600 700,660 356,726" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4" fill="none" marker-end="url(#arrow)"/>
+  <text x="856" y="676" font-size="12" fill="#64748b">object-finalized event</text>
 
-  <!-- ===================== Routine output / approvals ===================== -->
+  <!-- ===================== Human in the loop ===================== -->
   <g>
-    <rect x="560" y="626" width="380" height="214" rx="10" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
-    <text x="578" y="654" font-size="15" font-weight="bold" fill="#312e81">Routines are agentic + auditable</text>
-    <text x="578" y="682" font-size="13" fill="#334155">each run: Gemini plans with tools (list notes,</text>
-    <text x="578" y="700" font-size="13" fill="#334155">list tasks, queue approvals, write note) —</text>
-    <text x="578" y="718" font-size="13" fill="#334155">full trace stored and replayable in the UI</text>
-    <text x="578" y="746" font-size="13" fill="#334155">output: review/digest note in the feed +</text>
-    <text x="578" y="764" font-size="13" fill="#334155">queued approvals for task mutations</text>
-    <text x="578" y="792" font-size="13" font-weight="bold" fill="#312e81">human in the loop: nothing mutates a task</text>
-    <text x="578" y="810" font-size="13" font-weight="bold" fill="#312e81">until an approval is accepted in the SPA</text>
+    <rect x="390" y="702" width="410" height="202" rx="10" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+    <text x="408" y="728" font-size="15" font-weight="bold" fill="#312e81">Human in the loop</text>
+    <text x="408" y="752" font-size="13" fill="#334155">A routine run lists notes and tasks, writes a</text>
+    <text x="408" y="770" font-size="13" fill="#334155">digest or review note, and queues approvals.</text>
+    <text x="408" y="794" font-size="13" font-weight="bold" fill="#312e81">It has no task-mutation tool to call —</text>
+    <text x="408" y="812" font-size="13" font-weight="bold" fill="#312e81">the boundary is the toolset, not the prompt.</text>
+    <text x="408" y="836" font-size="13" fill="#334155">Nothing changes until you accept an approval</text>
+    <text x="408" y="854" font-size="13" fill="#334155">in the web or Android UI.</text>
+    <text x="408" y="878" font-size="13" fill="#334155">Chat mutates directly — your instruction in</text>
+    <text x="408" y="896" font-size="13" fill="#334155">the conversation is the approval.</text>
   </g>
-  <path d="M700,626 L700,558" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrowBlue)"/>
-  <path d="M940,760 C1220,760 1400,540 1310,274" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrowBlue)"/>
-  <text x="1180" y="700" font-size="12" fill="#2563eb">approve → task mutated</text>
+  <path d="M596,702 L596,634" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrowBlue)" marker-start="url(#arrowBlue)"/>
+  <path d="M800,820 C920,820 950,340 1012,272" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#arrowBlue)"/>
+  <text x="828" y="764" font-size="12" fill="#2563eb">approve → task mutated</text>
 
-  <!-- numbered flow legend -->
-  <g font-size="13" fill="#334155">
-    <text x="1000" y="490" font-weight="bold" fill="#64748b" font-size="14" letter-spacing="1">FLOWS</text>
-    <text x="1000" y="514">1. text → sync enrichment → note + tasks</text>
-    <text x="1000" y="536">2. audio → GCS → Eventarc → enrichment</text>
-    <text x="1000" y="558">3. schedule → routine run → note + approvals</text>
-    <text x="1000" y="580">4. approve in SPA → task mutation</text>
+  <!-- ===================== Research result path ===================== -->
+  <g>
+    <rect x="390" y="920" width="410" height="112" rx="10" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
+    <text x="408" y="946" font-size="15" font-weight="bold" fill="#581c87">Deep Research, decoupled from any instance</text>
+    <text x="408" y="970" font-size="13" fill="#334155">A capture with an explicit research flag opens a</text>
+    <text x="408" y="988" font-size="13" fill="#334155">Vertex interaction and an operations doc. Polls</text>
+    <text x="408" y="1006" font-size="13" fill="#334155">outlive every instance; the finished report lands</text>
+    <text x="408" y="1024" font-size="13" fill="#334155">in the feed as a research note, cited and linked.</text>
   </g>
+
+  <!-- ===================== Flow legend ===================== -->
+  <g font-size="13" fill="#334155">
+    <text x="1020" y="700" font-weight="bold" fill="#64748b" font-size="14" letter-spacing="1">FLOWS</text>
+    <text x="1020" y="726">1. text / link → sync enrichment → note + tasks</text>
+    <text x="1020" y="750">2. audio / image → GCS → Eventarc → enrichment</text>
+    <text x="1020" y="774">3. schedule → routine run → note + queued approvals</text>
+    <text x="1020" y="798">4. approve in the UI → task mutated</text>
+    <text x="1020" y="822">5. chat message → SSE trace stream → direct mutation</text>
+    <text x="1020" y="846">6. research flag → Vertex interaction + operations doc</text>
+    <text x="1020" y="870">   → Cloud Tasks poll every 30 s → research note</text>
+
+    <text x="1020" y="916" font-weight="bold" fill="#64748b" font-size="14" letter-spacing="1">CONTENT IS NOT INSTRUCTIONS</text>
+    <text x="1020" y="942">a research run needs an explicit client flag, never</text>
+    <text x="1020" y="960">a tag the model inferred from what it was reading</text>
+    <text x="1020" y="984">page titles and URLs are flattened to one line and</text>
+    <text x="1020" y="1002">ordered before the user's own words</text>
+    <text x="1020" y="1026">a link saved with no note of your own yields no tasks</text>
+  </g>
+  <!-- Cloud Run enqueues the first poll; drawn last so nothing paints over it -->
+  <path d="M700,634 C880,720 880,1072 700,1072 L210,1072 L210,1040" stroke="#b45309" stroke-width="1.5" stroke-dasharray="5,4" fill="none" marker-end="url(#arrowAmber)"/>
+  <text x="392" y="1064" font-size="12" fill="#b45309">Cloud Run enqueues the first poll</text>
 </svg>
