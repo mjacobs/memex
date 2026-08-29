@@ -10,7 +10,7 @@ dependency — unlike v0, which needed the Parakeet daemon.
 ## Setup
 
 1. Device key: put the `desktop` bearer key (Secret Manager
-   `memex-device-keys`, also in Bitwarden) in `~/.secrets`:
+   `memex-device-keys`, and in your password manager) in `~/.secrets`:
 
    ```bash
    export MEMEX_DESKTOP_KEY=<key>

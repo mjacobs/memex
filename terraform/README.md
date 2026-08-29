@@ -1,6 +1,6 @@
 # memex infrastructure
 
-Terraform for the whole memex stack on GCP project `m4tt-xyz` (override with
+Terraform for the whole memex stack on the GCP project you set as `project` (override with
 `-var project=...`): Cloud Run service, Firestore, audio GCS bucket, Eventarc
 trigger, Cloud Scheduler routine jobs, Secret Manager, and the service
 accounts wiring them together. Local state only — no remote backend.
@@ -24,23 +24,23 @@ terraform apply -target=google_artifact_registry_repository.docker
 Then, from the repo root:
 
 ```sh
-gcloud builds submit --project m4tt-xyz \
-  --tag us-central1-docker.pkg.dev/m4tt-xyz/memex/memex:latest .
+gcloud builds submit --project YOUR_PROJECT_ID \
+  --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/memex/memex:latest .
 ```
 
 ### 2. Apply
 
 ```sh
 cd terraform
-terraform apply -var image=us-central1-docker.pkg.dev/m4tt-xyz/memex/memex:latest
+terraform apply -var image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/memex/memex:latest
 ```
 
 Later image rollouts go through `gcloud run deploy` (terraform ignores image
 changes after creation):
 
 ```sh
-gcloud run deploy memex --project m4tt-xyz --region us-central1 \
-  --image us-central1-docker.pkg.dev/m4tt-xyz/memex/memex:latest
+gcloud run deploy memex --project YOUR_PROJECT_ID --region us-central1 \
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/memex/memex:latest
 ```
 
 ### 3. Add device keys (out of band, required before first use)
@@ -54,7 +54,7 @@ one:
 
 ```sh
 echo -n '{"dev": "<long-random-key>"}' | \
-  gcloud secrets versions add memex-device-keys --project m4tt-xyz --data-file=-
+  gcloud secrets versions add memex-device-keys --project YOUR_PROJECT_ID --data-file=-
 ```
 
 The service reads the `latest` version at startup (env

@@ -4,8 +4,8 @@ This is the contract W1–W4 build against. Change it only by editing this file
 first, in its own commit, with a reason. Everything else (module layout,
 internals) is workstream-local.
 
-Verified facts this contract sits on (all proved 2026-08-27 against project
-`m4tt-xyz`):
+Verified facts this contract sits on (all proved 2026-08-27 against a real
+GCP project):
 
 - `gemini-3.5-flash` on Vertex (location `global`) accepts **inline m4a audio**
   (`Part.from_bytes`, `mime_type="audio/mp4"`) plus a prompt, and honors
@@ -15,10 +15,10 @@ Verified facts this contract sits on (all proved 2026-08-27 against project
 - Vertex model roster includes `gemini-3.5-flash` (our default; override with
   `MEMEX_MODEL`).
 - ADC works locally; `aiplatform`, `run`, `eventarc`, `storage` APIs already
-  enabled on `m4tt-xyz` (Firestore, Scheduler, Secret Manager enabled by
+  enabled on the project (Firestore, Scheduler, Secret Manager enabled by
   terraform in W1).
 
-Decisions made with Matt (2026-08-27): deploy into **`m4tt-xyz`**; frontend is
+Decisions made with Matt (2026-08-27): deploy into a single GCP project; frontend is
 **Vite + React SPA**; routine output lands **both** as a feed note and in a
 routine-runs view; approval-queue actions at launch are **task mutations only**.
 Region default: `us-central1` (tfvar; confirm with Matt before first

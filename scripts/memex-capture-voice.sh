@@ -25,7 +25,9 @@ set -euo pipefail
 # MEMEX_URL (the retired Cloudflare worker) into every shell, so the v1
 # endpoint deliberately uses its own variable name: MEMEX_V1_URL.
 [[ -f "$HOME/.secrets" ]] && source "$HOME/.secrets"
-MEMEX_URL="${MEMEX_V1_URL:-https://memex-PROJECT_NUMBER.us-central1.run.app}"
+# Your Cloud Run URL: `terraform output service_url` (or `gcloud run services
+# describe memex --format='value(status.url)'`).
+MEMEX_URL="${MEMEX_V1_URL:-https://YOUR-SERVICE-URL}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 PIDFILE="$RUNTIME_DIR/memex-voice.pid"
 WAVFILE="$RUNTIME_DIR/memex-voice.wav"
@@ -63,7 +65,7 @@ device_key() {
   fi
   local key
   key=$(gcloud secrets versions access latest --secret memex-device-keys \
-    --project m4tt-xyz 2>/dev/null | jq -r '.desktop // empty') || true
+    --project "${MEMEX_PROJECT:?set MEMEX_PROJECT to your GCP project id}" 2>/dev/null | jq -r '.desktop // empty') || true
   if [[ -z "$key" ]]; then
     notify_err "no device key: set MEMEX_DESKTOP_KEY in ~/.secrets or run gcloud auth login"
     exit 1

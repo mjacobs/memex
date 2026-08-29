@@ -29,16 +29,17 @@ Decisions already made with Matt:
 
 ## Facts this design depends on that live outside the code
 
-All proved 2026-08-28 against project `m4tt-xyz` (account `user@example.com`):
+All proved 2026-08-28 against a real GCP project (`YOUR_PROJECT_ID` below
+stands in for it):
 
 - **Gemini Enterprise Agent Platform is the Next-2026 rebrand of Vertex AI**;
   Deep Research is served by plain `aiplatform.googleapis.com` — the API this
   service already uses and has enabled
-  (`gcloud services list --enabled --project m4tt-xyz --filter=aiplatform` →
+  (`gcloud services list --enabled --project YOUR_PROJECT_ID --filter=aiplatform` →
   enabled). No extra license; metered billing, auto-labeled
   `is_deep_research` in billing reports.
 - **`interactions.create` works from our credentials.**
-  `POST https://aiplatform.googleapis.com/v1beta1/projects/m4tt-xyz/locations/global/interactions`
+  `POST https://aiplatform.googleapis.com/v1beta1/projects/YOUR_PROJECT_ID/locations/global/interactions`
   with `{"agent": "deep-research-preview-04-2026", "background": true,
   "stream": true, "input": "..."}` returned
   `{"id": "...", "status": "in_progress"}` immediately.

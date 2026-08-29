@@ -5,7 +5,7 @@ transcribes and enriches it server-side into a note with tasks.
 
 ## Endpoint
 
-`POST https://memex-PROJECT_NUMBER.us-central1.run.app/api/v1/capture/audio`
+`POST https://YOUR-SERVICE-URL/api/v1/capture/audio`
 
 - Body: raw audio bytes (AAC-in-MP4 as recorded by iOS)
 - Headers:
@@ -19,11 +19,11 @@ transcribes and enriches it server-side into a note with tasks.
 - Response: `202 {"id": "<capture id>"}` — enrichment is asynchronous
   (GCS → Eventarc → Gemini, ~10 s); the note then appears in the feed.
 
-The phone key lives in Secret Manager (and Bitwarden):
+The phone key lives in Secret Manager (and your password manager):
 
 ```bash
 gcloud secrets versions access latest --secret memex-device-keys \
-  --project m4tt-xyz | jq -r .phone
+  --project YOUR_PROJECT_ID | jq -r .phone
 ```
 
 ## Shortcut steps
@@ -34,7 +34,7 @@ gcloud secrets versions access latest --secret memex-device-keys \
    - Start Recording: On Tap
    - Stop Recording: On Tap
 3. **Get Contents of URL**
-   - URL: `https://memex-PROJECT_NUMBER.us-central1.run.app/api/v1/capture/audio`
+   - URL: `https://YOUR-SERVICE-URL/api/v1/capture/audio`
    - Method: `POST`
    - Headers:
      - `Authorization`: `Bearer <phone key>` (literal word "Bearer", space, key)
@@ -63,8 +63,8 @@ ffmpeg -f pulse -i default -t 5 -c:a aac /tmp/test.m4a
 # key goes through a file, not argv (argv is readable in /proc)
 hdr=$(umask 077 && mktemp)
 gcloud secrets versions access latest --secret memex-device-keys \
-  --project m4tt-xyz | jq -r '"Authorization: Bearer " + .phone' > "$hdr"
-curl -X POST "https://memex-PROJECT_NUMBER.us-central1.run.app/api/v1/capture/audio" \
+  --project YOUR_PROJECT_ID | jq -r '"Authorization: Bearer " + .phone' > "$hdr"
+curl -X POST "https://YOUR-SERVICE-URL/api/v1/capture/audio" \
   -H "@$hdr" \
   -H "Content-Type: audio/mp4" \
   -H "X-Memex-Source: ios" \
