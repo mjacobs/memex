@@ -17,6 +17,6 @@ jobs:
       - run: uv run ruff check memex tests
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: web/package.json
+          version: 11
       - run: pnpm install && pnpm test && pnpm build
         working-directory: web
