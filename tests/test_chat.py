@@ -244,6 +244,42 @@ def test_post_message_failure_persists_partial_turn(client, monkeypatch):
     assert [e.text for e in updated.trace] == ["hi"]
 
 
+def test_post_message_reports_a_trace_that_could_not_be_stored(client, monkeypatch):
+    """A turn that ran but was not recorded must not answer `done`.
+
+    Firestore rejects a document over its size limit, and a long enough chat
+    session hits that. The append used to fail into the log while the client
+    still got `done`, so the turn silently vanished from the record the UI
+    replays and the audit trail depends on.
+    """
+
+    async def run_chat_turn(session_id: str, text: str):
+        yield TraceEvent(t=store.now(), role="user", text=text)
+
+    module = types.ModuleType("memex.agent.chat")
+    module.run_chat_turn = run_chat_turn
+    monkeypatch.setitem(sys.modules, "memex.agent.chat", module)
+
+    def boom(session_id: str, events):
+        raise RuntimeError("document exceeds the maximum allowed size")
+
+    monkeypatch.setattr(store, "append_chat_trace", boom)
+
+    session = _session()
+    store.put(session)
+    resp = client.post(
+        f"/api/v1/chat/sessions/{session.id}/messages",
+        headers=AUTH,
+        json={"text": "hi"},
+    )
+
+    assert resp.status_code == 200
+    events = _sse_events(resp.text)
+    assert [name for name, _ in events] == ["trace", "error"]
+    assert events[1][1]["error"]["code"] == "trace_not_persisted"
+    assert "maximum allowed size" in events[1][1]["error"]["message"]
+
+
 def test_chat_endpoints_require_auth(client):
     assert client.post("/api/v1/chat/sessions").status_code == 401
     assert client.get("/api/v1/chat/sessions").status_code == 401

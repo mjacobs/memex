@@ -78,18 +78,19 @@ async def post_message(session_id: str, body: MessageIn) -> StreamingResponse:
             503, "agent_unavailable", "chat agent is not available"
         ) from exc
 
-    async def persist(events: list[TraceEvent]) -> None:
+    async def persist(events: list[TraceEvent]) -> Exception | None:
         """Record the turn — even when the client hung up mid-stream.
 
         A disconnect closes the generator with a cancellation, not an
         Exception, so this runs from the `finally` below under a shielded
         scope: the tools may already have mutated notes or tasks, and the
         contract says every mutation lands in the session trace. A failure to
-        persist is logged rather than raised, because by then the stream is
-        already finished or gone.
+        persist is returned rather than raised, because by then the stream is
+        already finished or gone — the caller reports it in-band if the client
+        is still listening.
         """
         if not events:
-            return
+            return None
         with anyio.CancelScope(shield=True):
             try:
                 await anyio.to_thread.run_sync(
@@ -102,10 +103,12 @@ async def post_message(session_id: str, body: MessageIn) -> StreamingResponse:
                         session_id,
                         {"title": text[:TITLE_MAX]},
                     )
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "failed to persist chat trace for session %s", session_id
                 )
+                return exc
+        return None
 
     async def stream():
         events: list[TraceEvent] = []
@@ -121,9 +124,16 @@ async def post_message(session_id: str, body: MessageIn) -> StreamingResponse:
                 logger.exception("chat turn failed for session %s", session_id)
                 failure = exc
         finally:
-            await persist(events)
+            not_persisted = await persist(events)
         if failure is not None:
             yield _sse("error", error_body("chat_turn_failed", str(failure)))
+            return
+        if not_persisted is not None:
+            # The turn ran and its effects landed, but the record of it did
+            # not. `done` would tell the client the opposite, so say what
+            # actually happened instead — a turn missing from the trace is
+            # something the user needs to know about, not a log line.
+            yield _sse("error", error_body("trace_not_persisted", str(not_persisted)))
             return
         updated = await anyio.to_thread.run_sync(store.get, ChatSession, session_id)
         assert updated is not None
