@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, fetchImageObjectUrl, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
-import { Badge, ErrorBanner, Loading, Markdown, Tags, Trace } from "../components.jsx";
+import {
+  Badge,
+  ErrorBanner,
+  Loading,
+  Markdown,
+  PlainText,
+  Tags,
+  Trace,
+} from "../components.jsx";
 
 function LinkedTasks({ taskIds }) {
   const [tasks, setTasks] = useState(null);
@@ -227,7 +235,7 @@ export default function NoteDetail({ id }) {
                   onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
                 />
               ) : (
-                <p className="body-text">{note.summary}</p>
+                <PlainText text={note.summary} />
               )}
             </div>
           )}
@@ -237,7 +245,7 @@ export default function NoteDetail({ id }) {
           {note.transcript && (
             <div className="section">
               <h3>Transcript</h3>
-              <p className="body-text">{note.transcript}</p>
+              <PlainText text={note.transcript} />
             </div>
           )}
 
@@ -257,7 +265,7 @@ export default function NoteDetail({ id }) {
                 // heading and swallow anything angle-bracketed. Screenshot,
                 // link, digest, and review bodies are markdown the app or a
                 // routine composed, and do get rendered.
-                <p className="body-text">{note.body}</p>
+                <PlainText text={note.body} />
               ) : (
                 <Markdown text={note.body} />
               )}

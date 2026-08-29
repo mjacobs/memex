@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
+import { linkifyText } from "./linkify.js";
+
+export { PlainText } from "./linkify.js";
 
 // External links (http/https) open in a new tab with noopener/noreferrer, so
 // following a saved read-later link doesn't throw away the feed; in-app links
@@ -77,41 +80,6 @@ export function Tags({ tags, onTagClick, selected }) {
       ))}
     </div>
   );
-}
-
-const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
-
-function shortenUrl(url) {
-  try {
-    const u = new URL(url);
-    return `${u.host}…`;
-  } catch {
-    return url.length > 40 ? `${url.slice(0, 40)}…` : url;
-  }
-}
-
-/** Split text on bare http(s) URLs and render them as truncated, clickable links.
- * Returns an array of strings/elements suitable as React children — no HTML injection. */
-export function linkifyText(text) {
-  if (!text) return text;
-  const parts = String(text).split(URL_RE);
-  return parts.map((part, i) => {
-    if (i % 2 === 1) {
-      return (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="error-link"
-          title={part}
-        >
-          {shortenUrl(part)}
-        </a>
-      );
-    }
-    return part;
-  });
 }
 
 /** Formatted routine-run error: monospace, wrapped, with linkified URLs. */
