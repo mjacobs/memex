@@ -53,7 +53,7 @@ Raw inbound payloads; immutable except `status`/enrichment linkage.
 | --------------- | ------------------------------------------ | ---------------------------------------- |
 | `id`            | ulid                                       | doc id                                   |
 | `created_at`    | timestamp                                  |                                          |
-| `source`        | `"ios" \| "desktop" \| "web" \| "api"`     | free-form fallback `"api"`               |
+| `source`        | `"ios" \| "desktop" \| "web" \| "android" \| "api"` | free-form fallback `"api"`      |
 | `device_id`     | string                                     | from the bearer key that authenticated   |
 | `kind`          | `"text" \| "audio" \| "image" \| "link"`   |                                          |
 | `text?`         | string                                     | kind=text: the text; kind=image: optional caption; kind=link: the user's note |
