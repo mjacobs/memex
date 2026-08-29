@@ -32,7 +32,7 @@ needs a login screen.
 | --- | --- | --- |
 | iOS Shortcut (Action Button) | recorded audio | `POST /api/v1/capture/audio` |
 | Desktop hotkey (`ffmpeg`) | recorded audio | `POST /api/v1/capture/audio` |
-| Android app | voice, photo, typed text, shared links and images | all four capture routes |
+| [Android app](https://github.com/mjacobs/memex-android) | voice, photo, typed text, shared links and images | all four capture routes |
 | [Snippy](https://github.com/mjacobs/snippy) (Chrome) | an annotated screenshot plus the page it came from | `POST /api/v1/capture/image` |
 | [Tabby](https://github.com/mjacobs/tabby) (Chrome) | up to 20 stashed tabs at a time, as read-later notes | `POST /api/v1/capture/links` |
 | React SPA | typed text, and the whole read/manage UI | `POST /api/v1/capture` |
@@ -157,7 +157,7 @@ and nothing else — no cloud access, no credentials.
 ```bash
 git clone <this repo> && cd memex
 uv sync                 # ~30 s, installs into .venv
-uv run pytest -q        # 160 passed, 14 skipped in ~2 s
+uv run pytest -q        # 170 passed, 14 skipped in ~2 s
 cd web && pnpm install && pnpm build
 ```
 

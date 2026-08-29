@@ -1,0 +1,22 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      # The in-memory-fake suite; the 14 Firestore-emulator tests skip here.
+      - run: uv run pytest -q
+      - run: uv run ruff check memex tests
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - run: pnpm install && pnpm test && pnpm build
+        working-directory: web
