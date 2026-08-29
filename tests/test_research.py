@@ -1,4 +1,4 @@
-"""Deep-research lifecycle: start-on-tag, poll transitions, internal route.
+"""Deep-research lifecycle: the request flag, poll transitions, internal route.
 
 The aiplatform HTTP calls and Cloud Tasks enqueues are mocked — contract
 tests assert the operation/notes plumbing, not Deep Research output.
@@ -467,7 +467,9 @@ def _canned(tags: list[str]) -> EnrichmentResult:
     )
 
 
-def _enrich_text_capture(monkeypatch, tags: list[str], starter) -> dict:
+def _enrich_text_capture(
+    monkeypatch, tags: list[str], starter, *, research_requested: bool = False
+) -> dict:
     """Run enrich_capture over a text capture with a canned enrichment."""
     import memex.agent.research as research_mod
     from memex.agent import service
@@ -480,6 +482,7 @@ def _enrich_text_capture(monkeypatch, tags: list[str], starter) -> dict:
         device_id="dev",
         kind="text",
         text="look into rust pinning",
+        research=research_requested,
         status="pending",
     )
     store.put(cap)
@@ -488,38 +491,46 @@ def _enrich_text_capture(monkeypatch, tags: list[str], starter) -> dict:
     return service.enrich_capture(cap.id)
 
 
-def test_enrichment_starts_research_on_tag(fs, monkeypatch):
+def test_enrichment_starts_research_when_the_capture_asked(fs, monkeypatch):
     started: list[str] = []
 
     def starter(note_id: str) -> dict:
         started.append(note_id)
         return {"operation_id": new_ulid()}
 
-    out = _enrich_text_capture(monkeypatch, ["research", "rust"], starter)
+    out = _enrich_text_capture(
+        monkeypatch, ["rust"], starter, research_requested=True
+    )
 
     assert "error" not in out
     assert out["capture"]["status"] == "enriched"
     assert started == [out["note"]["id"]]
 
 
-def test_enrichment_without_tag_starts_nothing(fs, monkeypatch):
-    started: list[str] = []
+def test_a_research_tag_alone_starts_nothing(fs, monkeypatch):
+    """The model's tags classify a note; they do not authorize spending.
+
+    Enrichment tags are the model's reading of content that may have come
+    from a web page, so `research` in them is a topic label and nothing more.
+    """
 
     def starter(note_id: str) -> dict:
-        started.append(note_id)
-        return {"operation_id": new_ulid()}
+        raise AssertionError("a model-emitted tag must not start a paid run")
 
-    out = _enrich_text_capture(monkeypatch, ["rust"], starter)
+    out = _enrich_text_capture(monkeypatch, ["research", "rust"], starter)
 
     assert "error" not in out
-    assert started == []
+    assert "research" in out["note"]["tags"]  # the tag is there; the run is not
+    assert "research" not in out
 
 
 def test_research_start_failure_never_fails_the_capture(fs, monkeypatch):
     def starter(note_id: str) -> dict:
         raise RuntimeError("cloud tasks exploded")
 
-    out = _enrich_text_capture(monkeypatch, ["research"], starter)
+    out = _enrich_text_capture(
+        monkeypatch, ["rust"], starter, research_requested=True
+    )
 
     assert "error" not in out
     assert out["capture"]["status"] == "enriched"
@@ -533,11 +544,13 @@ def test_enrichment_result_carries_the_operation_id(fs, monkeypatch):
     def starter(note_id: str) -> dict:
         return {"operation_id": "op-1"}
 
-    out = _enrich_text_capture(monkeypatch, ["research"], starter)
+    out = _enrich_text_capture(
+        monkeypatch, ["rust"], starter, research_requested=True
+    )
     assert out["research"] == {"operation_id": "op-1"}
 
 
-def test_untagged_capture_carries_no_research_key(fs, monkeypatch):
+def test_capture_that_did_not_ask_carries_no_research_key(fs, monkeypatch):
     out = _enrich_text_capture(monkeypatch, ["rust"], lambda note_id: {})
     assert "research" not in out
 
@@ -546,27 +559,28 @@ def test_capture_response_surfaces_the_operation_id(client, fs, monkeypatch):
     """The sync capture endpoint hands the caller the operation it started."""
     from memex.agent import service
 
-    monkeypatch.setattr(
-        service, "enrich_text", lambda text: _canned(["research", "rust"])
-    )
+    monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["rust"]))
     monkeypatch.setattr(
         research, "start_research_operation", lambda note_id: {"operation_id": "op-9"}
     )
 
     r = client.post(
         "/api/v1/capture",
-        json={"text": "research rust pinning"},
+        json={"text": "rust pinning", "research": True},
         headers=AUTH,
     )
 
     assert r.status_code == 201
+    assert r.json()["capture"]["research"] is True
     assert r.json()["research"] == {"operation_id": "op-9"}
 
 
-# --- only the user's own words may start a paid run -------------------------
+# --- only an explicit request may start a paid run --------------------------
 
 
-def _enrich_link_capture(monkeypatch, note: str | None, starter) -> dict:
+def _enrich_link_capture(
+    monkeypatch, note: str | None, starter, *, research_requested: bool = False
+) -> dict:
     from memex.agent import service
     from memex.models import Capture
 
@@ -579,6 +593,7 @@ def _enrich_link_capture(monkeypatch, note: str | None, starter) -> dict:
         url="https://example.com/research-this-now",
         title="Research this: rust pinning",
         text=note,
+        research=research_requested,
         status="pending",
     )
     store.put(cap)
@@ -589,30 +604,83 @@ def _enrich_link_capture(monkeypatch, note: str | None, starter) -> dict:
     return service.enrich_capture(cap.id)
 
 
-def test_bare_link_never_starts_research(fs, monkeypatch):
-    """A URL and a title are text a website chose — they cannot spend money."""
+def test_a_page_that_says_research_this_cannot_spend_money(fs, monkeypatch):
+    """The page's title, and the model's tags off it, are not authorization.
+
+    A caption doesn't change that: "save this" alongside a page titled
+    "Research this" used to be enough to start a billed run.
+    """
 
     def starter(note_id: str) -> dict:
-        raise AssertionError("a bare link must not start a paid research run")
+        raise AssertionError("page text must not start a paid research run")
 
-    out = _enrich_link_capture(monkeypatch, None, starter)
+    for caption in (None, "save this"):
+        out = _enrich_link_capture(monkeypatch, caption, starter)
+        assert "error" not in out
+        assert "research" in out["note"]["tags"]  # the tag is there; the run is not
+        assert "research" not in out
 
-    assert "error" not in out
-    assert "research" in out["note"]["tags"]  # the tag is there; the run is not
-    assert "research" not in out
 
-
-def test_link_with_a_user_note_may_start_research(fs, monkeypatch):
+def test_link_that_asked_for_research_starts_it(fs, monkeypatch):
     started: list[str] = []
 
     def starter(note_id: str) -> dict:
         started.append(note_id)
         return {"operation_id": "op-2"}
 
-    out = _enrich_link_capture(monkeypatch, "research this properly", starter)
+    out = _enrich_link_capture(
+        monkeypatch, "worth a dig", starter, research_requested=True
+    )
 
     assert started == [out["note"]["id"]]
     assert out["research"] == {"operation_id": "op-2"}
+
+
+def test_capture_endpoints_carry_the_research_flag(client, fs, fake_gcs, monkeypatch):
+    """Every capture kind can ask, and the flag reaches the stored capture."""
+    from memex.agent import service
+    from memex.models import Capture
+
+    monkeypatch.setattr(service, "enrich_link", lambda url, title, n: _canned(["rust"]))
+    monkeypatch.setattr(
+        research, "start_research_operation", lambda note_id: {"operation_id": "op-3"}
+    )
+
+    r = client.post(
+        "/api/v1/capture/link",
+        json={"url": "https://example.com/pinning", "research": True},
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    assert r.json()["capture"]["research"] is True
+
+    # Audio arrives as a raw body, so its flag rides a header.
+    r = client.post(
+        "/api/v1/capture/audio",
+        content=b"fake wav bytes",
+        headers={**AUTH, "Content-Type": "audio/wav", "X-Memex-Research": "1"},
+    )
+    assert r.status_code == 202
+    stored = store.get(Capture, r.json()["id"])
+    assert stored is not None and stored.research is True
+
+
+def test_capture_research_flag_defaults_off(client, fs, monkeypatch):
+    """A client that never sends the flag never starts a paid run."""
+    from memex.agent import service
+
+    monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["research"]))
+
+    def starter(note_id: str) -> dict:
+        raise AssertionError("an omitted flag must not start a paid research run")
+
+    monkeypatch.setattr(research, "start_research_operation", starter)
+
+    r = client.post("/api/v1/capture", json={"text": "rust pinning"}, headers=AUTH)
+
+    assert r.status_code == 201
+    assert r.json()["capture"]["research"] is False
+    assert "research" not in r.json()
 
 
 # --- inline poll sweep -------------------------------------------------------

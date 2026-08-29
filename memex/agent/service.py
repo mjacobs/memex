@@ -23,7 +23,7 @@ from memex.agent.enrichment import (
     enrich_image,
     enrich_link,
     enrich_text,
-    maybe_start_research,
+    start_requested_research,
 )
 from memex.config import settings
 from memex.ids import new_ulid
@@ -96,22 +96,6 @@ def _link_body(capture: Capture) -> str:
 def _link_tags(tags: list[str]) -> list[str]:
     """Guarantee the read-later tag so saved links stay filterable."""
     return tags if READ_LATER_TAG in tags else [READ_LATER_TAG, *tags]
-
-
-def _may_ask_for_research(capture: Capture) -> bool:
-    """Whether this capture's own content is allowed to start a paid research
-    run.
-
-    A research kickoff spends real money, so only the user's own words may
-    ask for one. A saved link is a URL and a title the site chose, and a
-    screenshot with no caption is a page the user only pointed at — a tag
-    off either of those came from the page, not from them. Same rule, same
-    reason as the bare-link action-items gate below: the prompts say page
-    text is not instructions; these gates make it true.
-    """
-    if capture.kind in ("link", "image"):
-        return bool((capture.text or "").strip())
-    return True
 
 
 def _download_gcs(gcs_uri: str) -> bytes:
@@ -273,7 +257,8 @@ def enrich_capture(capture_id: str) -> dict:
             # A saved link is a URL and a title the site chose. Nothing there
             # is the user asking for anything, so a task out of a bare link
             # can only have come from the page talking to the model. The link
-            # prompt already says this; enforcing it here makes it true.
+            # prompt already says page text is not instructions; enforcing it
+            # here makes it true.
             action_items = []
 
         task_ids: list[str] = []
@@ -290,13 +275,13 @@ def enrich_capture(capture_id: str) -> dict:
         )
         capture.status = "enriched"
         capture.note_id = note.id
-        # After the capture note lands: research ∈ tags starts a deep-research
-        # operation. Never fails the capture — but the outcome rides back in
-        # the result so a kickoff that failed is visible to the caller
-        # instead of only to the log.
-        research = (
-            maybe_start_research(note) if _may_ask_for_research(capture) else None
-        )
+        # After the capture note lands: the client's explicit research flag —
+        # and nothing else — starts a deep-research operation. A run spends
+        # real money and ships the note to an external service, so the model's
+        # reading of page text never authorizes one (contracts.md). Never
+        # fails the capture, but the outcome rides back in the result so a
+        # kickoff that failed is visible to the caller and not only to the log.
+        research = start_requested_research(note) if capture.research else None
         tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
         result_out = {
             "capture": capture.model_dump(mode="json"),

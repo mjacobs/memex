@@ -18,6 +18,9 @@ function pickMime() {
  */
 export default function Composer({ onPending, onUpdatePending, onSettled, onError }) {
   const [text, setText] = useState("");
+  // Armed by the user, per capture: the one thing that starts a background
+  // research run. Nothing the model reads out of a page can set it.
+  const [research, setResearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const recorderRef = useRef(null);
@@ -41,13 +44,15 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
     const tempId = `pending-${Date.now()}`;
     onPending({ id: tempId, label: value, status: "processing" });
     setText("");
+    setResearch(false);
     try {
-      await api.captureText(value);
+      await api.captureText(value, { research });
       onSettled(tempId); // enriched note now exists; feed refetch shows it
     } catch (err) {
       onSettled(tempId);
       onError(err.message);
       setText(value); // give the text back
+      setResearch(research);
     } finally {
       setSending(false);
     }
@@ -110,8 +115,9 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
       const contentType = mime.split(";")[0]; // server keys on the bare type
       const tempId = `pending-${Date.now()}`;
       onPending({ id: tempId, label: "🎙 voice capture", status: "uploading" });
+      setResearch(false);
       try {
-        const d = await api.captureAudio(blob, contentType);
+        const d = await api.captureAudio(blob, contentType, { research });
         onUpdatePending(tempId, { status: "pending" });
         pollCapture(d.id, tempId);
       } catch (err) {
@@ -147,6 +153,20 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
           placeholder={recording ? "recording… tap ■ to send" : "Capture a thought…"}
           disabled={sending}
         />
+        <button
+          type="button"
+          className={`icon-btn ${research ? "armed" : ""}`}
+          onClick={() => setResearch((on) => !on)}
+          aria-pressed={research}
+          title={
+            research
+              ? "research this capture in the background — tap to cancel"
+              : "research this capture in the background"
+          }
+          aria-label="research this capture in the background"
+        >
+          🔬
+        </button>
         <button
           type="submit"
           className="icon-btn send"

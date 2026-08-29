@@ -88,10 +88,10 @@ def _enrich_or_fail(capture: Capture) -> dict:
 def _capture_result(capture: Capture, enrichment: dict | None = None) -> dict:
     """The {capture, note, tasks} envelope the sync capture paths return.
 
-    A note tagged for research also carries `research`:
+    A capture that asked for research also carries `research`:
     `{"operation_id": ...}` when the run started, `{"error": ...}` when it
     could not — a failed kickoff would otherwise be indistinguishable from a
-    note that never asked for research.
+    capture that never asked for research.
     """
     capture = store.get(Capture, capture.id) or capture
     note = store.get(Note, capture.note_id) if capture.note_id else None
@@ -112,6 +112,9 @@ def _capture_result(capture: Capture, enrichment: dict | None = None) -> dict:
 class CaptureIn(BaseModel):
     text: str
     source: str | None = None
+    # Explicit "research this" from the client's own affordance. Optional, so
+    # a client that never sends it simply never starts a paid run.
+    research: bool = False
 
 
 @router.post("/capture", status_code=201)
@@ -125,6 +128,7 @@ def capture_text(body: CaptureIn, device_id: str = Depends(require_device)) -> d
         device_id=device_id,
         kind="text",
         text=body.text,
+        research=body.research,
         status="pending",
     )
     store.put(capture)
@@ -135,6 +139,7 @@ class LinkIn(BaseModel):
     url: str
     title: str | None = None
     note: str | None = None
+    research: bool = False
 
 
 class LinksIn(BaseModel):
@@ -194,6 +199,12 @@ def _optional_url(url: str | None) -> str | None:
     return _http_url(url)
 
 
+def _flag(value: str | None) -> bool:
+    """A boolean request header. Audio arrives as a raw body, so its flags
+    ride headers rather than JSON fields."""
+    return (value or "").strip().lower() in ("1", "true", "yes")
+
+
 def _truncate(value: str | None, limit: int) -> str | None:
     if value is None:
         return None
@@ -212,6 +223,7 @@ def _save_link(link: LinkIn, source: str | None, device_id: str) -> Capture:
         url=_clean_url(link.url),
         title=_truncate(link.title, 500),
         text=_truncate(link.note, 4000),
+        research=link.research,
         status="pending",
     )
     store.put(capture)
@@ -300,6 +312,7 @@ async def capture_audio(
         kind="audio",
         audio_gcs_uri=gcs.audio_uri(capture_id, ext),
         audio_mime=content_type,
+        research=_flag(request.headers.get("x-memex-research")),
         status="pending",
     )
     await anyio.to_thread.run_sync(store.put, capture)
@@ -324,6 +337,7 @@ class ImageCaptureIn(BaseModel):
     source_url: str | None = None
     title: str | None = None
     source: str | None = None
+    research: bool = False
 
 
 @router.post("/capture/image", status_code=202)
@@ -367,6 +381,7 @@ async def capture_image(
         image_mime=mime,
         source_url=_optional_url(body.source_url),
         title=_truncate(body.title, 500),
+        research=body.research,
         status="pending",
     )
     await anyio.to_thread.run_sync(store.put, capture)

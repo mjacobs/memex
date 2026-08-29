@@ -76,18 +76,25 @@ export async function fetchImageObjectUrl(path) {
 }
 
 export const api = {
-  captureText: (text) =>
+  // `research` is the user's explicit "dig into this" — the only thing that
+  // starts a paid research run (contracts.md). Audio has a raw body, so its
+  // flag rides a header.
+  captureText: (text, { research = false } = {}) =>
     request("/api/v1/capture", {
       method: "POST",
-      body: { text, source: "web" },
+      body: { text, source: "web", research },
       headers: { "X-Memex-Source": "web" },
     }),
-  captureAudio: (blob, mime) =>
+  captureAudio: (blob, mime, { research = false } = {}) =>
     request("/api/v1/capture/audio", {
       method: "POST",
       body: blob,
       raw: true,
-      headers: { "Content-Type": mime, "X-Memex-Source": "web" },
+      headers: {
+        "Content-Type": mime,
+        "X-Memex-Source": "web",
+        ...(research ? { "X-Memex-Research": "1" } : {}),
+      },
     }),
   getCapture: (id) => request(`/api/v1/captures/${id}`),
   listNotes: (params = {}) => {

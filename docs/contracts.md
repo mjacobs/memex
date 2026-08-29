@@ -64,6 +64,7 @@ Raw inbound payloads; immutable except `status`/enrichment linkage.
 | `image_mime?`   | string                                     | e.g. `image/png`, `image/jpeg`           |
 | `source_url?`   | string                                     | kind=image, page the screenshot came from |
 | `title?`        | string                                     | kind=image/link, page title as the client reported it |
+| `research`      | bool                                       | the user asked for a background research run; default `false` |
 | `status`        | `"pending" \| "processing" \| "enriched" \| "failed"` | audio/image start `pending`   |
 | `error?`        | string                                     | status=failed                            |
 | `note_id?`      | ulid                                       | set when enrichment lands                |
@@ -152,15 +153,20 @@ tolerate a 404 on those ids.
 A `research` note's `body` is the report markdown, its tags include
 `research-report`, its `source_note_id` links back to the note that asked,
 and its `trace` holds the mapped Deep Research steps. Enrichment path: after
-a capture note is written, if `research` ∈ tags → start a deep-research
-operation (create interaction, write operation doc, enqueue first poll
-task).
+a capture note is written, if the capture carried `research: true` → start a
+deep-research operation (create interaction, write operation doc, enqueue
+first poll task).
 
-Only the user's own words may start a research run, because a run spends
-real money: a saved link with no note, and a screenshot with no caption,
-never trigger one however the page's title or contents are tagged. It is the
-same rule as the bare-link action-items gate — the tags on those captures are
-drawn from text a website chose, not from the user.
+**Only an explicit request starts a research run**, because a run spends real
+money and ships the note to an external service. That request is the
+capture's own `research` field, set by the client from an affordance the user
+touched — never inferred from content. The enrichment model's tags classify a
+note and nothing more: a `research` tag is an ordinary topic label, and a page
+titled "Research this!" cannot spend a cent however the model reads it. The
+field is optional and defaults to `false`, so a client that does not send it
+simply never starts a run; the user can still ask for one from chat with
+`start_research`. Same reasoning as the bare-link action-items gate — what a
+website chose to say is not the user asking for anything.
 
 Failure to *start* must not fail the capture, but must not be silent either:
 the sync capture response carries `research` — `{"operation_id": …}` when the
@@ -213,11 +219,11 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 
 | method & path                        | req                                                | resp                                       |
 | ------------------------------------ | -------------------------------------------------- | ------------------------------------------ |
-| `POST /api/v1/capture`               | `{"text": "...", "source?": "..."}`                | `201 {capture, note, tasks, research?}` — sync enrich; `research` only when the note was tagged for it |
-| `POST /api/v1/capture/link`          | `{"url": "...", "title?": "...", "note?": "..."}`  | `201 {capture, note, tasks}` — sync enrich |
-| `POST /api/v1/capture/links`         | `{"links": [{url, title?, note?}], "source?": "..."}` (max 20) | `201 {results: [{url, capture, note, tasks} \| {url, error}]}` — one bad entry never fails the batch; `url` is `null` if the entry had none |
-| `POST /api/v1/capture/audio`         | raw audio body; `Content-Type: audio/*`; `X-Memex-Source?` | `202 {"id": "<capture_id>"}` — GCS upload only |
-| `POST /api/v1/capture/image`         | `{"image_base64", "mime", "text?", "source_url?", "title?", "source?"}` | `202 {"id": "<capture_id>"}` — GCS upload only, max 10 MiB |
+| `POST /api/v1/capture`               | `{"text": "...", "source?": "...", "research?": false}` | `201 {capture, note, tasks, research?}` — sync enrich; `research` only when the capture asked for it |
+| `POST /api/v1/capture/link`          | `{"url": "...", "title?": "...", "note?": "...", "research?": false}` | `201 {capture, note, tasks}` — sync enrich |
+| `POST /api/v1/capture/links`         | `{"links": [{url, title?, note?, research?}], "source?": "..."}` (max 20) | `201 {results: [{url, capture, note, tasks} \| {url, error}]}` — one bad entry never fails the batch; `url` is `null` if the entry had none |
+| `POST /api/v1/capture/audio`         | raw audio body; `Content-Type: audio/*`; `X-Memex-Source?`; `X-Memex-Research?` (`1`/`true`) | `202 {"id": "<capture_id>"}` — GCS upload only |
+| `POST /api/v1/capture/image`         | `{"image_base64", "mime", "text?", "source_url?", "title?", "source?", "research?": false}` | `202 {"id": "<capture_id>"}` — GCS upload only, max 10 MiB |
 | `GET /api/v1/captures/{id}`          |                                                    | `200 {capture}` (poll for audio/image status) |
 | `GET /api/v1/captures/{id}/image`    | kind=image only                                    | `200` raw image bytes (`Content-Type` = `image_mime`) |
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |

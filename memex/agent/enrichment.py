@@ -187,24 +187,20 @@ def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResu
     return EnrichmentResult.model_validate_json(response.text)
 
 
-def maybe_start_research(note: Note) -> dict | None:
-    """Kick off a deep-research operation when the capture note asks for one.
+def start_requested_research(note: Note) -> dict:
+    """Kick off the deep-research run the capture explicitly asked for.
 
-    Enrichment path per docs/contracts.md: after the capture note is written,
-    `research` ∈ tags starts a deep-research operation. Failure to *start*
-    must never fail the capture — the user still has their note and can retry
-    from chat (`start_research`). But it must not be invisible either: the
-    outcome is returned so the capture response can carry it, because a
-    kickoff that only ever failed into the log looks to the user exactly like
-    a capture that was never tagged for research at all.
+    Called only when `capture.research` is set — the enrichment model's tags
+    never reach this (docs/contracts.md). Failure to *start* must never fail
+    the capture: the user still has their note and can retry from chat
+    (`start_research`). But it must not be invisible either, so the outcome
+    is returned for the capture response to carry — a kickoff that only ever
+    failed into the log looks exactly like one that was never asked for.
 
-    Returns `{"operation_id": ...}` or `{"error": ...}`, or None when the note
-    did not ask for research.
+    Returns `{"operation_id": ...}` or `{"error": ...}`.
     """
-    from memex.agent.research import RESEARCH_TAG, start_research_operation
+    from memex.agent.research import start_research_operation
 
-    if RESEARCH_TAG not in note.tags:
-        return None
     try:
         result = start_research_operation(note.id)
     except Exception as exc:  # start_research_operation shouldn't raise, but even so

@@ -858,6 +858,13 @@ a {
   color: #fff;
 }
 
+/* The research toggle, armed: this capture will start a background run. */
+.icon-btn.armed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .icon-btn.recording {
   background: var(--red);
   border-color: var(--red);

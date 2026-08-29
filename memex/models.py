@@ -85,6 +85,11 @@ class Capture(BaseModel):
     image_mime: str | None = None
     # Provenance for kind=image: the page the screenshot was taken from.
     source_url: str | None = None
+    # The user asked for a background research run on this capture. Set by
+    # the client from an explicit affordance, never inferred from content —
+    # a run spends real money and ships the note to an external service, and
+    # a page the user only saved gets a say in neither.
+    research: bool = False
     status: CaptureStatus
     processing_at: datetime | None = None  # set when an enrichment run claims it
     error: str | None = None

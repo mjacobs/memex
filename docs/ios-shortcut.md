@@ -12,6 +12,10 @@ transcribes and enriches it server-side into a note with tasks.
   - `Authorization: Bearer <phone device key>`
   - `Content-Type: audio/mp4`
   - `X-Memex-Source: ios`
+  - `X-Memex-Research: 1` (optional) — ask for a background research run on
+    this capture. Only this header starts one; nothing the model reads out of
+    the audio can (docs/contracts.md). Leave it off for ordinary captures, or
+    make a second shortcut that sends it for "dig into this" notes.
 - Response: `202 {"id": "<capture id>"}` — enrichment is asynchronous
   (GCS → Eventarc → Gemini, ~10 s); the note then appears in the feed.
 
