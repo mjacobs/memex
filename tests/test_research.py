@@ -653,6 +653,7 @@ def test_capture_endpoints_carry_the_research_flag(client, fs, fake_gcs, monkeyp
     )
     assert r.status_code == 201
     assert r.json()["capture"]["research"] is True
+    assert r.json()["research"] == {"operation_id": "op-3"}
 
     # Audio arrives as a raw body, so its flag rides a header.
     r = client.post(
@@ -663,6 +664,37 @@ def test_capture_endpoints_carry_the_research_flag(client, fs, fake_gcs, monkeyp
     assert r.status_code == 202
     stored = store.get(Capture, r.json()["id"])
     assert stored is not None and stored.research is True
+
+
+def test_link_endpoints_surface_the_operation_they_started(client, fs, monkeypatch):
+    """A link that asked for research learns which run it got.
+
+    Both link routes used to run enrichment and throw its result away, so a
+    caller got the capture back with no operation id and no kickoff error —
+    a failed run was indistinguishable from one that was never requested.
+    """
+    from memex.agent import service
+
+    monkeypatch.setattr(service, "enrich_link", lambda url, title, n: _canned(["rust"]))
+    monkeypatch.setattr(
+        research, "start_research_operation", lambda note_id: {"error": "no quota"}
+    )
+
+    r = client.post(
+        "/api/v1/capture/links",
+        json={
+            "links": [
+                {"url": "https://example.com/a", "research": True},
+                {"url": "https://example.com/b"},
+            ]
+        },
+        headers=AUTH,
+    )
+
+    assert r.status_code == 201
+    asked, did_not = r.json()["results"]
+    assert asked["research"] == {"error": "no quota"}
+    assert "research" not in did_not
 
 
 def test_capture_research_flag_defaults_off(client, fs, monkeypatch):

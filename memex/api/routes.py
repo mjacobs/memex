@@ -235,8 +235,7 @@ def capture_link(body: LinkIn, device_id: str = Depends(require_device)) -> dict
     """Save one link as a read-later note. The page is never fetched server
     side; the note is written from the URL, title, and user note alone."""
     capture = _save_link(body, None, device_id)
-    _enrich_or_fail(capture)
-    return _capture_result(capture)
+    return _capture_result(capture, _enrich_or_fail(capture))
 
 
 @router.post("/capture/links", status_code=201)
@@ -274,13 +273,13 @@ def capture_links(body: LinksIn, device_id: str = Depends(require_device)) -> di
             continue
         try:
             capture = _save_link(link, body.source, device_id)
-            _enrich_or_fail(capture)
+            enrichment = _enrich_or_fail(capture)
         except ApiError as exc:
             results.append(
                 {"url": link.url, "error": {"code": exc.code, "message": exc.message}}
             )
             continue
-        results.append({"url": link.url, **_capture_result(capture)})
+        results.append({"url": link.url, **_capture_result(capture, enrichment)})
     return {"results": results}
 
 
