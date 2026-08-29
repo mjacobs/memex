@@ -21,7 +21,12 @@ api:
 web:
 	cd web && pnpm dev
 
+## Tests against the emulator. Without it, the gRPC client retries forever and
+## says nothing, so check the port first and fail fast.
 test:
+	@bash -c '[[ -n "$$(exec 3<>/dev/tcp/localhost/$(FIRESTORE_EMULATOR_PORT) && echo ok)" ]] 2>/dev/null || { \
+		echo "Firestore emulator not running on $(FIRESTORE_EMULATOR_HOST_VALUE) — run '\''make emulator'\'' first, or run '\''uv run pytest'\'' for the in-memory fake"; \
+		exit 1; }'
 	FIRESTORE_EMULATOR_HOST=$(FIRESTORE_EMULATOR_HOST_VALUE) uv run pytest -q
 
 lint:
