@@ -25,6 +25,12 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
   const [recording, setRecording] = useState(false);
   const recorderRef = useRef(null);
   const pollTimers = useRef([]);
+  // `onstop` fires long after the render that armed the recorder, so reading
+  // `research` from that closure would upload the value the toggle had when
+  // recording started. Arming or disarming mid-recording has to count: it is
+  // the one affordance that spends money.
+  const researchRef = useRef(research);
+  researchRef.current = research;
 
   useEffect(
     () => () => {
@@ -115,15 +121,18 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
       const contentType = mime.split(";")[0]; // server keys on the bare type
       const tempId = `pending-${Date.now()}`;
       onPending({ id: tempId, label: "🎙 voice capture", status: "uploading" });
+      const wantsResearch = researchRef.current; // as of stop, not of start
       setResearch(false);
       try {
-        const d = await api.captureAudio(blob, contentType, { research });
+        const d = await api.captureAudio(blob, contentType, {
+          research: wantsResearch,
+        });
         onUpdatePending(tempId, { status: "pending" });
         pollCapture(d.id, tempId);
       } catch (err) {
         onSettled(tempId);
         onError(err.message);
-        setResearch(research); // give the armed flag back, as the text path does
+        setResearch(wantsResearch); // give the armed flag back, as the text path does
       }
     };
     recorderRef.current = recorder;
