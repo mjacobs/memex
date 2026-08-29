@@ -1,28 +1,27 @@
 # memex — build plan
 
-Voice/text capture agent for the All Things Agentic Hackathon (Taskmaster
-track). Capture a thought from phone or desktop → an ADK agent transcribes,
-enriches, extracts action items, tracks tasks, and runs scheduled background
-reviews — all on GCP, one `terraform apply`, everything scale-to-zero.
+Voice/text capture agent. Capture a thought from phone or desktop → an ADK
+agent transcribes, enriches, extracts action items, tracks tasks, and runs
+scheduled background reviews — all on GCP, one `terraform apply`, everything
+scale-to-zero.
 
 - **Merge path:** this new repo, local `main`, no PRs (solo, 4-day clock).
-  Public GitHub push before submission (run `scrub-private-data` first).
+  Public GitHub push at the end (run `scrub-private-data` first).
 - **Reviewer:** roborev whole-branch pass before the public push; per-commit
   hook optional (skip triaging chore commits).
 - **Kill criterion:** capture → agent turn → tasks visible in UI, deployed on
-  Cloud Run, not working end-to-end by **Sat Aug 29 morning** → stop, polish
-  aftershift, submit that instead.
+  Cloud Run, not working end-to-end by **Sat Aug 29 morning** → stop and polish
+  what runs instead.
 - **Size class:** bounded-large. This plan is the spec; no separate design doc.
-- **Deadline:** submission closes **Sun Aug 31, 5 PM PT**. Last half-day
-  reserved for video + diagram + write-up (judged artifacts).
+- **Deadline:** **Sun Aug 31, 5 PM PT**. Last half-day reserved for video +
+  diagram + write-up.
 
-## Hackathon compliance (locked)
+## Platform constraints (locked)
 
 Gemini 3.5+ via Vertex ✓ · Google ADK ✓ · GCP infra: Cloud Run, Firestore, GCS,
-Eventarc, Cloud Scheduler, Secret Manager ✓ · Track: **Taskmaster**
-(event-driven workflow, autonomous routing). New code only; disclose lifted
-patterns (adk-samples long-horizon-harness, serverless-memex design) in the
-write-up.
+Eventarc, Cloud Scheduler, Secret Manager ✓ · event-driven workflow with
+autonomous routing. New code only; lifted patterns (adk-samples
+long-horizon-harness, serverless-memex design) disclosed in the README.
 
 ## Architecture (1 paragraph)
 
@@ -61,7 +60,7 @@ focused commits on main.
 | W4  | Frontend                | Capture-first feed (memex-style), note detail w/ agent trace, tasks view, approval buttons, record button (MediaRecorder)                                                                                    | W0 (API mocks) |
 | W5  | Clients                 | Adapt `memex-capture-voice.sh` (fix the pidfile bug or send audio straight up — no Parakeet dependency), iOS Shortcut + doc                                                                                  | W2 deployed    |
 | W6  | Integration + hardening | End-to-end on real GCP, cost check (scale-to-zero verified), roborev branch review, scrub-private-data                                                                                                       | W1–W4          |
-| W7  | Submission              | Demo video (capture→task→routine→approval arc), architecture diagram, write-up, public repo                                                                                                                  | W6             |
+| W7  | Wrap-up                 | Demo video (capture→task→routine→approval arc), architecture diagram, write-up, public repo                                                                                                                  | W6             |
 
 ## Schedule (4 days)
 
@@ -71,7 +70,7 @@ focused commits on main.
 - **Fri:** W5 clients; HITL approvals; nightly digest; polish. Kill-criterion
   checkpoint Sat AM.
 - **Sat:** W6 integration + review + scrub; stretch: Memory Bank garnish.
-- **Sun (by noon):** W7 video/diagram/write-up; submit with buffer.
+- **Sun (by noon):** W7 video/diagram/write-up, with buffer.
 
 ## Subagent / workflow execution notes
 
@@ -92,6 +91,6 @@ focused commits on main.
   deploy.
 - iOS Shortcuts can POST a recorded audio file with custom headers — known good
   from serverless-memex.
-- $150 credit is applied to the billing account (Matt confirmed received).
+- Billing account is active with credit applied (confirmed before W1).
 - Scale-to-zero: no min-instances anywhere; Firestore/GCS/Scheduler idle cost ≈
   $0.

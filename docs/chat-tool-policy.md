@@ -2,9 +2,8 @@
 
 **Size class:** architectural · **Merge path:** local `main` in this repo
 (commits only when Matt asks) · **Reviewer:** Matt + a whole-branch roborev
-pass before anything is pushed · **Kill criterion:** the hackathon closes
-**Mon Aug 31, 5 PM PT** and this is not a judged feature. The demo video is
-recorded Sunday, so the cutoff comes earlier than the deadline: if step 3
+pass before anything is pushed · **Kill criterion:** this is out of scope for
+the **Aug 31** milestone, and the demo recording lands earlier still: if step 3
 (durable ADK sessions) is not working by **Sun morning**, stop and ship the
 one-line fallback in "If we run out of time" instead — a half-built
 confirmation flow is worse than none.

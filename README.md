@@ -7,9 +7,8 @@ cleanups you accept with one click, and a chat sidebar lets you ask questions
 of everything you have ever captured — or send one note off for a
 deep-research report that lands back in the feed.
 
-memex is a personal capture agent built for the All Things Agentic hackathon
-(Taskmaster track). It runs entirely on Google Cloud and scales to zero when
-idle.
+memex is a personal capture agent. It runs entirely on Google Cloud and scales
+to zero when idle.
 
 ![Architecture](docs/architecture.png)
 
@@ -251,8 +250,7 @@ MEMEX_URL=https://memex-<project#>.us-central1.run.app MEMEX_KEY=<key> scripts/s
 
 ## Lifted patterns (disclosure)
 
-All code here is new for the hackathon. Three designs are consciously
-borrowed:
+All code here is new. Three designs are consciously borrowed:
 
 - The routine fire path (scheduler → push endpoint → agent session with tools →
   stored trace) and the human-in-the-loop approval queue follow the

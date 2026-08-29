@@ -5,7 +5,7 @@ resource "google_firestore_database" "default" {
   location_id = var.region
   type        = "FIRESTORE_NATIVE"
 
-  # Hackathon posture: allow terraform destroy to tear it down.
+  # Personal-project posture: allow terraform destroy to tear it down.
   delete_protection_state = "DELETE_PROTECTION_DISABLED"
   deletion_policy         = "DELETE"
 
