@@ -3,7 +3,7 @@
 # terraform state:
 #
 #   echo -n '{"dev": "some-long-random-key"}' | \
-#     gcloud secrets versions add memex-device-keys --project m4tt-xyz --data-file=-
+#     gcloud secrets versions add memex-device-keys --project YOUR_PROJECT_ID --data-file=-
 resource "google_secret_manager_secret" "device_keys" {
   project   = var.project
   secret_id = "memex-device-keys"

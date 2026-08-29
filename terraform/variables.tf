@@ -1,7 +1,6 @@
 variable "project" {
   type        = string
-  description = "GCP project id."
-  default     = "m4tt-xyz"
+  description = "GCP project id. Set it in terraform.tfvars (gitignored)."
 }
 
 variable "region" {
@@ -18,7 +17,7 @@ variable "service_name" {
 
 variable "image" {
   type        = string
-  description = "Container image for the Cloud Run service (e.g. us-central1-docker.pkg.dev/m4tt-xyz/memex/memex:latest)."
+  description = "Container image for the Cloud Run service (e.g. us-central1-docker.pkg.dev/YOUR_PROJECT_ID/memex/memex:latest)."
 }
 
 variable "model" {

@@ -39,10 +39,14 @@ build:
 ## Full code rollout: SPA build -> container build/push -> Cloud Run deploy.
 ## (terraform ignores the container image on purpose; run `terraform apply`
 ## separately for infrastructure changes.)
-PROJECT ?= m4tt-xyz
+# Set PROJECT in local.mk (gitignored) or on the command line:
+#     make deploy PROJECT=your-project-id
+-include local.mk
+PROJECT ?=
 REGION ?= us-central1
 IMAGE ?= $(REGION)-docker.pkg.dev/$(PROJECT)/memex/memex:latest
 
 deploy: build
+	@[ -n "$(PROJECT)" ] || { echo "PROJECT is unset — set it in local.mk or pass PROJECT=..."; exit 1; }
 	gcloud builds submit --project $(PROJECT) --tag $(IMAGE) .
 	gcloud run deploy memex --project $(PROJECT) --region $(REGION) --image $(IMAGE)

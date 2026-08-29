@@ -14,7 +14,7 @@ def _env(name: str, default: str = ""):
 
 
 class Settings(BaseModel):
-    project: str = _env("GOOGLE_CLOUD_PROJECT", "m4tt-xyz")
+    project: str = _env("GOOGLE_CLOUD_PROJECT")
     location: str = _env("MEMEX_VERTEX_LOCATION", "global")
     # Analysis model (text enrichment + routine sessions); the promo-priced
     # 3.7 flash is newer and cheaper than 3.5 flash through 2026-12-31.
@@ -37,7 +37,7 @@ class Settings(BaseModel):
     tasks_invoker_sa: str = Field(
         default_factory=lambda: os.environ.get(
             "MEMEX_TASKS_INVOKER_SA",
-            f"memex-scheduler@{os.environ.get('GOOGLE_CLOUD_PROJECT', 'm4tt-xyz')}"
+            f"memex-scheduler@{os.environ.get('GOOGLE_CLOUD_PROJECT', '')}"
             ".iam.gserviceaccount.com",
         )
     )
@@ -53,7 +53,7 @@ class Settings(BaseModel):
             for v in os.environ.get(
                 "MEMEX_INTERNAL_INVOKERS",
                 ",".join(
-                    f"memex-{sa}@{os.environ.get('GOOGLE_CLOUD_PROJECT', 'm4tt-xyz')}"
+                    f"memex-{sa}@{os.environ.get('GOOGLE_CLOUD_PROJECT', '')}"
                     ".iam.gserviceaccount.com"
                     for sa in ("trigger", "scheduler")
                 ),
