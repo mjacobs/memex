@@ -72,23 +72,25 @@ whether this design still holds.
   FeatureName.TOOL_CONFIRMATION is enabled.` No deployment flag is needed, but
   the API can change under a `google-adk` bump — pin it.
 
-- **Our current per-turn session rebuild cannot carry a confirmation. This is
-  the real work.** `memex/agent/chat.py` builds a fresh `InMemorySessionService`
+- **The pending confirmation has to survive between the two turns, and today
+  nothing does.** `memex/agent/chat.py` builds a fresh `InMemorySessionService`
   each turn and seeds it only with the stored trace's `user`/`model` *text*,
-  deliberately dropping tool calls. Replaying a confirmation into a session
+  deliberately dropping tool calls. ADK resolves a confirmation by scanning
+  session events for the original `adk_request_confirmation` call
+  (`flows/llm_flows/request_confirmation.py`), so replaying one into a session
   built that way raises
   `ValueError: Function call not found for function response ids: {...}`
-  (`policy_predicate.py`, FACT 7). ADK resolves a confirmation by scanning
-  session events for the original `adk_request_confirmation` call
-  (`flows/llm_flows/request_confirmation.py`), so those events have to survive
-  the gap between two HTTP requests.
+  (`policy_predicate.py`, FACT 7).
 
-- **ADK events are storable, and replaying them restores a pending
-  confirmation.** `Event` is a pydantic model. `event_roundtrip.py` dumped a
-  session's events to JSON, rebuilt them with `Event.model_validate`, appended
-  them to a brand-new service, and the confirmation then resumed and ran the
-  tool. Four events cost **~2,420 JSON bytes** — about 600 bytes each, which
-  matters against Firestore's 1 MiB document limit for a long-running chat.
+- **What has to survive is two events, not the session.** `Event` is a pydantic
+  model, so it JSON round-trips (`event_roundtrip.py`). `minimal_replay.py`
+  then narrows it: seeding a fresh service with today's text history plus only
+  the two events that mention the pending call — the original `update_note`
+  call and the `adk_request_confirmation` that followed it — resumed and ran
+  the tool. **2 events, 1,341 bytes.** Only one confirmation can be pending at
+  a time and it is cleared when answered, so this is a small fixed field on the
+  session rather than a growing log, and Firestore's 1 MiB document limit is
+  not in play.
 
 - **obsidian-gemini gates on a risk class, not on provenance.**
   `src/types/tool-policy.ts` (327 lines) gives every tool one of
@@ -121,12 +123,12 @@ render "update note *Buy milk*: summary → …" with approve and reject buttons
 The answer arrives as a normal message POST carrying the id and the verdict.
 This keeps the existing "one POST, one turn, one stream" shape untouched.
 
-**Chat sessions get durable ADK events.** `ChatSession` grows an `adk_events`
-field holding the raw serialized events, written alongside the contract trace
-that already exists. The trace stays the human-readable record and the SPA
-keeps reading it; `adk_events` is the machine record that makes resumption
-work. The seeding code in `memex/agent/chat.py` replays those events instead of
-reconstructing text turns.
+**One pending confirmation is stored, and seeding is otherwise unchanged.**
+`ChatSession` grows a `pending_confirmation` field holding the two serialized
+ADK events that describe the paused call. The next turn replays them after the
+existing text seeding, then clears the field. The contract trace stays the
+human-readable record and the SPA keeps reading it; this is a small machine-
+readable annex beside it, not a replacement for how history is rebuilt.
 
 **"Don't ask me again" is scoped to one session.** A per-session set of trusted
 tool names, stored on the `ChatSession`, is consulted by the
@@ -139,6 +141,35 @@ mutations through `queue_approval`. Written in the new vocabulary, a routine is
 simply a session where `write` and `external` resolve to deny rather than ask —
 the rule stops being a special case and becomes the headless setting of one
 policy.
+
+## The alternative: no ADK confirmation at all
+
+Chat's mutators could instead stop writing and start proposing — calling
+`queue_approval` the way routines already do, so a change lands in the
+`approvals` collection and is applied server-side by the
+`POST /api/v1/approvals/{id}/approve` endpoint that already exists. This is
+what the code review originally suggested, and it needs none of the ADK
+machinery above: no experimental API, no pending state on the session, no
+replay.
+
+It is genuinely tempting, and it has one real security edge — the approved
+action is the typed `ApprovalAction` the user saw, applied by our code, so the
+model has no opportunity to alter it between proposal and execution. Worth
+noting that ADK's flow amounts to the same shape, since the paused call is
+serialized into the confirmation event's args; the difference is where it is
+held and who applies it.
+
+Two things argue against it. `ApprovalAction` covers only `task_update` and
+`task_create` today, so note edits and research kickoffs would need new action
+types and new apply logic — the machinery exists but does not yet fit. And the
+flow leaves the conversation: you approve in the queue view, later, rather than
+answering in the chat you are already looking at. For "fix the typo in that
+note" that is a bad trade, and it is most of what chat is for.
+
+The recommendation is the ADK route, on the strength of staying in the
+conversation. If the experimental API turns out to churn, this is the migration
+target rather than a rewrite — the classification work in step 1 is what
+decides *whether* to gate, and it is untouched either way.
 
 ## What this does not do
 
@@ -157,23 +188,20 @@ feature is only live after step 4.
 
 1. Classify the tools and add the policy resolver, with tests. Pure addition,
    nothing reads it yet.
-2. Persist `adk_events` on `ChatSession` and seed turns from them instead of
-   from text. No behavior change, and the riskiest step — it replaces how every
-   chat turn reconstructs its history.
-3. Turn on `require_confirmation` with the policy predicate; the turn now ends
-   with a pending confirmation.
-4. Carry the confirmation over SSE and accept the verdict on the messages
+2. Turn on `require_confirmation` with the policy predicate, store the pending
+   confirmation on the session, and replay it on the next turn.
+3. Carry the confirmation over SSE and accept the verdict on the messages
    endpoint; update `docs/contracts.md`.
-5. The SPA: render the confirmation card, wire approve and reject.
-6. Session-scoped trust, and the settings affordance for it.
+4. The SPA: render the confirmation card, wire approve and reject.
+5. Session-scoped trust, and the settings affordance for it.
 
-The risk is concentrated in step 2, not step 3. Confirmation itself is a
-library feature that already works; making chat sessions durable enough to
-resume is the part that touches every turn. Two consequences worth deciding
-before writing code: existing chat sessions have no `adk_events`, so they need
-to degrade to today's text seeding rather than break; and a long session will
-eventually approach Firestore's 1 MiB document limit at ~600 bytes an event,
-which probably means keeping only a recent window.
+The risk is not in the plumbing — it is that `ToolConfirmation` is an
+experimental ADK API, so a `google-adk` bump can change it under us. The
+mitigation is the proof scripts: pin the version, and re-run
+`scripts/adk-proofs/` after any bump to see whether the four behaviors this
+design assumes still hold. The other thing to get right is that a session with
+no pending confirmation, and every session written before this change, must
+seed exactly as it does today.
 
 ## If we run out of time
 
