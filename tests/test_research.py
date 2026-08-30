@@ -11,7 +11,7 @@ import pytest
 
 from memex.agent import research
 from memex.ids import new_ulid
-from memex.models import ActionItem, EnrichmentResult, Note, Operation
+from memex.models import ActionItem, EnrichmentResult, Note, Operation, TraceEvent
 from memex.store import firestore as store
 from tests.conftest import AUTH
 
@@ -896,13 +896,17 @@ def test_note_research_route_starts_a_run(fs, client, monkeypatch):
     assert calls == [(note.id, False)]
 
 
-def test_note_research_route_refuses_a_second_concurrent_run(fs, client, monkeypatch):
+def test_note_research_route_refuses_a_second_concurrent_run(
+    fs, client, enqueued, monkeypatch
+):
+    """409 without creating an interaction — the refusal has to come before
+    the money, not after it."""
     note = _make_note()
     store.update(Note, note.id, {"research_status": "running"})
     monkeypatch.setattr(
         research,
-        "start_research_operation",
-        lambda note_id, merge_into_source=False: pytest.fail("should not start"),
+        "_create_interaction",
+        lambda prompt: pytest.fail("must not create a paid interaction"),
     )
 
     r = client.post(f"/api/v1/notes/{note.id}/research", headers=AUTH)
@@ -992,3 +996,75 @@ def test_a_saved_link_does_not_merge(fs, monkeypatch):
         title="WAL mode",
     )
     assert calls == [False]
+
+
+def test_only_one_of_two_racing_kickoffs_creates_an_interaction(
+    fs, enqueued, monkeypatch
+):
+    """A double tap must not buy two reports.
+
+    The old shape read the note, saw "not running", and only then created the
+    interaction — a window wide enough for a second request to do the same.
+    The claim closes it: the loser stops before spending anything.
+    """
+    note = _make_note()
+    created: list[str] = []
+    monkeypatch.setattr(
+        research,
+        "_create_interaction",
+        lambda prompt: created.append(prompt) or f"i-{len(created)}",
+    )
+
+    first = research.start_research_operation(note.id)
+    second = research.start_research_operation(note.id)
+
+    assert "operation_id" in first
+    assert second.get("code") == "already_running"
+    assert len(created) == 1, "the loser must not create a paid interaction"
+
+
+def test_a_kickoff_that_dies_hands_the_note_back(fs, enqueued, monkeypatch):
+    """A claim that never became a run must not leave the note busy forever,
+    or it could never be researched again."""
+    note = _make_note()
+    monkeypatch.setattr(
+        research,
+        "_create_interaction",
+        lambda prompt: (_ for _ in ()).throw(RuntimeError("no quota")),
+    )
+
+    out = research.start_research_operation(note.id)
+
+    assert "error" in out
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status is None
+    # And the note can be researched again once the outage passes.
+    assert store.claim_note_research(note.id) is True
+
+
+def test_merging_keeps_the_notes_own_trace(fs, enqueued, monkeypatch):
+    """The trace is the honesty surface: how the note became a note, plus a
+    user event per owner edit. The report is appended to that history, not
+    written over it."""
+    source = _make_note()
+    store.update(
+        Note,
+        source.id,
+        {
+            "trace": [
+                TraceEvent(t=store.now(), role="user", text="Edited summary").model_dump(
+                    mode="python"
+                )
+            ]
+        },
+    )
+    op = _make_operation(source_note_id=source.id, merge_into_source=True)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    research.poll_operation(op.id)
+
+    note = store.get(Note, source.id)
+    assert note is not None
+    texts = [e.text for e in note.trace]
+    assert "Edited summary" in texts, "the note's own history survived"
+    assert "# Report\n\nFindings." in texts, "the report's steps were added"

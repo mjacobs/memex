@@ -77,11 +77,13 @@ export default function Feed({ pendingCaptures, refreshToken }) {
   );
 
   // Notes carry their own research_status now, so the cards say what is
-  // pending. This poll is only the refetch trigger: when the running count
-  // drops to zero a report has landed (or a run died), and the feed needs to
-  // be re-read to show it.
+  // pending. This poll is only the refetch trigger: any change in the running
+  // set means some note's status moved. Watching for the count to reach zero
+  // was not enough — a run started from chat takes it 0 -> 1 and its card
+  // would show nothing, and one of three runs finishing takes it 3 -> 2 with
+  // a report already in the feed.
   const [opsSettled, setOpsSettled] = useState(0);
-  const prevRunning = useRef(0);
+  const prevRunning = useRef(null);
   useEffect(() => {
     let alive = true;
     let timer = null;
@@ -94,7 +96,9 @@ export default function Feed({ pendingCaptures, refreshToken }) {
       }
       if (!alive) return;
       if (count !== null) {
-        if (prevRunning.current > 0 && count === 0) setOpsSettled((n) => n + 1);
+        if (prevRunning.current !== null && count !== prevRunning.current) {
+          setOpsSettled((n) => n + 1);
+        }
         prevRunning.current = count;
       }
       timer = setTimeout(poll, count ? OPS_POLL_MS : OPS_IDLE_POLL_MS);

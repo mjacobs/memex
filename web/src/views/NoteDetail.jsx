@@ -145,6 +145,10 @@ function CaptureImage({ src }) {
   );
 }
 
+// Deep Research runs for minutes to hours; this is the page you are on when
+// you press the button, so it should stop saying "report pending" on its own.
+const NOTE_POLL_MS = 15000;
+
 export default function NoteDetail({ id }) {
   const [note, setNote] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
@@ -174,6 +178,33 @@ export default function NoteDetail({ id }) {
       alive = false;
     };
   }, [id]);
+
+  // While a run is in flight, re-read the note until it settles. Without
+  // this the page keeps saying "report pending" long after the report landed,
+  // because nothing else on this route ever refetches.
+  const running = note?.research_status === "running";
+  useEffect(() => {
+    if (!running) return undefined;
+    let alive = true;
+    let timer = null;
+    const tick = async () => {
+      try {
+        const d = await api.getNote(id);
+        if (!alive) return;
+        setNote(d.note);
+        if (d.note.research_status === "running") timer = setTimeout(tick, NOTE_POLL_MS);
+      } catch {
+        // A poll that fails is not worth an error banner over the note
+        // itself; try again on the next tick.
+        if (alive) timer = setTimeout(tick, NOTE_POLL_MS);
+      }
+    };
+    timer = setTimeout(tick, NOTE_POLL_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [id, running]);
 
   function startEdit() {
     setConfirmingDelete(false);
@@ -352,6 +383,16 @@ export default function NoteDetail({ id }) {
               >
                 Open source note
               </button>
+            </div>
+          )}
+
+          {/* The report replaced the body; what the user actually wrote is
+              the thing this system exists to keep, so show it rather than
+              leaving it readable only through the API. */}
+          {note.original_body && (
+            <div className="section">
+              <h3>What you asked</h3>
+              <PlainText text={note.original_body} />
             </div>
           )}
 

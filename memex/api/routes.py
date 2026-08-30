@@ -523,16 +523,15 @@ def start_note_research(note_id: str) -> dict:
     This path never merges. The note stands on its own already, so the report
     lands as its own `research` note pointing back here.
     """
-    note = store.get(Note, note_id)
-    if note is None:
+    if store.get(Note, note_id) is None:
         raise ApiError(404, "not_found", f"note {note_id} not found")
-    if note.research_status == "running":
-        raise ApiError(
-            409, "already_running", f"note {note_id} already has a research run"
-        )
     from memex.agent.research import start_research_operation
 
+    # The kickoff claims the note itself, so a second request racing this one
+    # loses there rather than here — this is not a check-then-act.
     result = start_research_operation(note_id)
+    if result.get("code") == "already_running":
+        raise ApiError(409, "already_running", result["error"])
     if result.get("error"):
         raise ApiError(502, "research_failed", result["error"])
     return {"operation_id": result["operation_id"], "status": "running"}
