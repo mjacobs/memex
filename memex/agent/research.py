@@ -265,9 +265,15 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         interaction_id = _create_interaction(_research_prompt(note))
     except Exception as exc:
         logger.exception("failed to create the interaction for note %s", note_id)
-        # Nothing was created and nothing was spent, so hand the note back the
-        # way it was — otherwise a note that never started a run reads as busy
-        # forever and can never be researched again.
+        # KNOWN LIMIT: this treats every failure as "nothing was created", and
+        # hands the note back so it is not stuck busy after, say, a bad
+        # request. A timeout is the exception — the provider may have accepted
+        # and billed a run whose id never reached us, and a retry would then
+        # buy a second. Closing that needs either an idempotency key on the
+        # interactions API or a durable kickoff record reconciled afterwards,
+        # neither of which the API is known to support today. The exposure is
+        # one duplicate report in a narrow window, against a note stuck busy
+        # forever on every ordinary failure, which is the worse trade.
         store.settle_note_research(note_id, operation_id, note.research_status)
         return {"error": str(exc)}
     try:
@@ -300,10 +306,10 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         # The interaction is running server-side but nothing will ever poll
         # it; fail the operation so the queue doesn't show it running forever.
         logger.exception("failed to enqueue first poll for operation %s", op.id)
-        # The note is freed before the operation settles, as in poll_operation:
-        # settling first and dying in between would strand it as running with
-        # nothing left to reconcile it.
-        _mark_note_failed(note_id, op.id)
+        # Same reasoning as a lost operation write above: the interaction is
+        # created and billing, so freeing the note would let a retry buy a
+        # second one. The operation is failed because nothing will poll it,
+        # but the note stays claimed.
         store.update_operation(
             op.id, {"status": "failed", "error": f"enqueue failed: {exc}"}
         )
@@ -520,6 +526,9 @@ def poll_operation(operation_id: str) -> dict:
             # Resume if this operation already owns the reservation: a merge
             # that threw after reserving would otherwise find the id taken,
             # dedupe against itself, and leave the run permanently running.
+            # Two deliveries resuming at once can both merge, which appends
+            # the report's trace events twice — cosmetic, and the cheaper
+            # failure than a run that can never finish.
             if op.result_note_id != op.source_note_id and not (
                 store.reserve_operation_result(op.id, op.source_note_id)
             ):
