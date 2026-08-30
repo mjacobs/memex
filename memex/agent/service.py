@@ -288,7 +288,21 @@ def enrich_capture(capture_id: str) -> dict:
             # The kickoff stamped research_status onto the stored note; re-read
             # so the response says a report is coming rather than describing
             # the note as it was a moment before.
-            note = store.get(Note, note.id) or note
+            #
+            # Best-effort, and deliberately outside the enclosing try: by now
+            # the note is written, the capture is enriched, and a paid run is
+            # going. Letting a flaky read fail the capture would mark all of
+            # that failed, and the composer hands the text back for a retry
+            # that writes a second note and buys a second run. The kickoff's
+            # outcome is already in `research`; a stale badge is not worth it.
+            try:
+                note = store.get(Note, note.id) or note
+            except Exception:
+                logger.exception(
+                    "could not re-read note %s after its research kickoff; "
+                    "returning it as written",
+                    note.id,
+                )
         tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
         result_out = {
             "capture": capture.model_dump(mode="json"),

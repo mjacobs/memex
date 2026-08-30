@@ -551,6 +551,42 @@ def test_research_start_failure_never_fails_the_capture(fs, monkeypatch):
     assert "cloud tasks exploded" in out["research"]["error"]
 
 
+def test_a_flaky_read_after_the_kickoff_does_not_fail_the_capture(fs, monkeypatch):
+    """By the kickoff the note is written and a paid run is going.
+
+    Failing the capture over the re-read that follows it would tell the client
+    nothing landed, and the composer hands the text back — a retry that writes
+    a second note and buys a second run.
+    """
+    from memex.agent import service
+
+    started: list[str] = []
+
+    def starter(note_id: str) -> dict:
+        started.append(note_id)
+        return {"operation_id": "op-4"}
+
+    real_get = store.get
+
+    def flaky(model, doc_id):
+        if started and model is Note:
+            raise RuntimeError("firestore blip")
+        return real_get(model, doc_id)
+
+    monkeypatch.setattr(service.store, "get", flaky)
+
+    out = _enrich_text_capture(
+        monkeypatch, ["rust"], starter, research_requested=True
+    )
+
+    assert "error" not in out
+    assert out["capture"]["status"] == "enriched"
+    assert out["research"] == {"operation_id": "op-4"}
+    # The note comes back as it was written — a stale badge, not a lost note.
+    assert out["note"]["id"] == started[0]
+    assert real_get(Note, started[0]) is not None
+
+
 def test_enrichment_result_carries_the_operation_id(fs, monkeypatch):
     def starter(note_id: str) -> dict:
         return {"operation_id": "op-1"}
