@@ -246,10 +246,20 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
     leaving two notes that say the same thing. Runs started against a note
     that already stands on its own default to False and keep today's shape.
     """
+    note = store.get(Note, note_id)
+    if note is None:
+        return {"error": f"note {note_id} not found"}
+    previous_status = note.research_status
+    # Claim the note before spending anything. Two callers racing here — a
+    # double tap, or two devices — would otherwise both read "not running"
+    # and both create a paid interaction; the loser stops before it costs
+    # money rather than after.
+    if not store.claim_note_research(note_id):
+        return {
+            "error": f"note {note_id} already has a research run",
+            "code": "already_running",
+        }
     try:
-        note = store.get(Note, note_id)
-        if note is None:
-            return {"error": f"note {note_id} not found"}
         interaction_id = _create_interaction(_research_prompt(note))
         op = Operation(
             id=new_ulid(),
@@ -261,11 +271,12 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
             merge_into_source=merge_into_source,
         )
         store.put(op)
-        # The note carries the run's state from here on, so a feed card can
-        # say a report is coming without joining against the queue.
-        store.update(Note, note_id, {"research_status": "running"})
     except Exception as exc:
         logger.exception("failed to start research for note %s", note_id)
+        # Nothing is polling and no operation may exist: hand the note back
+        # the way it was, or a note that never started a run reads as busy
+        # forever and can never be researched again.
+        store.release_note_research(note_id, previous_status)
         return {"error": str(exc)}
     try:
         _enqueue_poll(op.id)
@@ -276,7 +287,7 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         store.update_operation(
             op.id, {"status": "failed", "error": f"enqueue failed: {exc}"}
         )
-        store.update(Note, note_id, {"research_status": "failed"})
+        _mark_note_failed(note_id)
         return {"error": f"enqueue failed: {exc}"}
     return {"operation_id": op.id}
 
@@ -364,7 +375,15 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
         else note.summary,
         "tags": [RESEARCH_REPORT_TAG, *tags],
         "research_status": "completed",
-        "trace": [e.model_dump(mode="python") for e in _trace_from_steps(steps)],
+        # Appended, never replaced: the note already carries how it became a
+        # note, plus a user event for every owner edit. The trace is the
+        # honesty surface, and overwriting it here would erase the note's own
+        # provenance to make room for the report's. Appended server-side so a
+        # concurrent edit's event is not lost; a replayed completion can
+        # duplicate the research events, which is the cheaper failure.
+        "trace": store.array_union(
+            [e.model_dump(mode="python") for e in _trace_from_steps(steps)]
+        ),
     }
     store.update(Note, note.id, changes)
     return store.get(Note, note.id)
@@ -491,8 +510,15 @@ def poll_operation(operation_id: str) -> dict:
                 return _deduped(op)
             note = _write_research_note(op, interaction, note_id)
             # The asking note stops saying a report is coming; the report
-            # itself is the other note.
-            store.update(Note, op.source_note_id, {"research_status": "completed"})
+            # itself is the other note. Best effort — the report is already
+            # written, and a note deleted mid-run must not leave the
+            # operation unsettled and re-polling forever.
+            try:
+                store.update(Note, op.source_note_id, {"research_status": "completed"})
+            except Exception:
+                logger.exception(
+                    "could not clear research status on note %s", op.source_note_id
+                )
         store.update_operation(
             op.id,
             {"status": "completed", "attempts": attempts, "result_note_id": note.id},

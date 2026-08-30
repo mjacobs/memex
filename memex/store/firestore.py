@@ -6,6 +6,7 @@ docs/contracts.md. Uses the emulator when FIRESTORE_EMULATOR_HOST is set
 (the google-cloud-firestore client honors it natively).
 """
 
+import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 
@@ -24,6 +25,8 @@ from memex.models import (
     Task,
     TraceEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 COLLECTIONS: dict[type[BaseModel], str] = {
     Capture: "captures",
@@ -133,6 +136,38 @@ def transition_operation(
     except FailedPrecondition:
         return False
     return True
+
+
+def claim_note_research(note_id: str) -> bool:
+    """Compare-and-set a note into research_status="running"; True if we won.
+
+    The 409 on POST /notes/{id}/research is a read followed by a start, and a
+    double tap can slip between them — two interactions, two bills. Claiming
+    the note first with a last_update_time precondition makes exactly one
+    caller the winner, and the loser never creates an interaction at all.
+    """
+    ref = db().collection(COLLECTIONS[Note]).document(note_id)
+    snap = ref.get()
+    if not snap.exists or (snap.to_dict() or {}).get("research_status") == "running":
+        return False
+    try:
+        ref.update(
+            {"research_status": "running"},
+            option=db().write_option(last_update_time=snap.update_time),
+        )
+    except FailedPrecondition:
+        return False
+    return True
+
+
+def release_note_research(note_id: str, status: str | None) -> None:
+    """Undo a claim whose run never got off the ground. Best effort: the
+    caller is already returning an error, and a note deleted in the meantime
+    is not a second failure worth raising."""
+    try:
+        update(Note, note_id, {"research_status": status})
+    except Exception:
+        logger.exception("could not release the research claim on note %s", note_id)
 
 
 def list_chat_sessions(limit: int = 20) -> list[ChatSession]:
