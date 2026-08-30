@@ -601,7 +601,9 @@ def test_a_flaky_read_after_the_kickoff_does_not_fail_the_capture(fs, monkeypatc
     real_get = store.get
 
     def flaky(model, doc_id):
-        if started and model is Note:
+        # Every read after the kickoff, not only the note's: nothing the
+        # response is assembled from may cost the capture.
+        if started:
             raise RuntimeError("firestore blip")
         return real_get(model, doc_id)
 
@@ -616,6 +618,8 @@ def test_a_flaky_read_after_the_kickoff_does_not_fail_the_capture(fs, monkeypatc
     assert out["research"] == {"operation_id": "op-4"}
     # The note comes back as it was written — a stale badge, not a lost note.
     assert out["note"]["id"] == started[0]
+    # And the tasks were read before the money was spent, so they are here.
+    assert [t["title"] for t in out["tasks"]] == ["Read the pinning chapter"]
     assert real_get(Note, started[0]) is not None
 
 

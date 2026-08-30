@@ -269,6 +269,11 @@ def enrich_capture(capture_id: str) -> dict:
             )
             task_ids = created["task_ids"]
             note.task_ids = task_ids
+        # Read back before the research kickoff, not after building the reply:
+        # every read is a read that can fail, and a failure here is still one
+        # where failing the capture is the right answer, because nothing has
+        # been spent yet.
+        tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
 
         store.update(
             Capture, capture.id, {"status": "enriched", "note_id": note.id, "error": None}
@@ -289,8 +294,8 @@ def enrich_capture(capture_id: str) -> dict:
             # so the response says a report is coming rather than describing
             # the note as it was a moment before.
             #
-            # Best-effort, and deliberately outside the enclosing try: by now
-            # the note is written, the capture is enriched, and a paid run is
+            # Best-effort, and the last store read in this function: by now the
+            # note is written, the capture is enriched, and a paid run is
             # going. Letting a flaky read fail the capture would mark all of
             # that failed, and the composer hands the text back for a retry
             # that writes a second note and buys a second run. The kickoff's
@@ -303,7 +308,6 @@ def enrich_capture(capture_id: str) -> dict:
                     "returning it as written",
                     note.id,
                 )
-        tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
         result_out = {
             "capture": capture.model_dump(mode="json"),
             "note": note.model_dump(mode="json"),
