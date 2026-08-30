@@ -209,6 +209,36 @@ the sync capture response carries `research` — `{"operation_id": …}` when th
 run started, `{"error": …}` when it could not — so a failed kickoff is
 distinguishable from a note that never asked for research.
 
+#### Known limits
+
+Accepted tradeoffs, held after review rather than half-fixed. Each is the
+cheaper horn of a dilemma the current substrate cannot dissolve: the
+interactions API has no idempotency key, and nothing in production sweeps
+running operations (kata `wz2g`).
+
+- **An ambiguous create can buy a duplicate report.** A timeout, a 5xx, or an
+  unparseable response may mean an accepted, billed run whose id never reached
+  us. The note stays claimed for a few polls so an immediate retry cannot
+  double-spend, then is handed back — a deliberate retry after that can buy a
+  second report if the first was real. Holding the claim forever would make
+  the note permanently un-researchable over what is usually a network blip.
+  Closing this needs an idempotency key on the interactions API, or a way to
+  list interactions and reconcile against the operation.
+- **A lost first enqueue orphans a running operation.** The Cloud Tasks poll
+  re-enqueues itself, so if every attempt at the *first* enqueue fails — or
+  the process dies before it — nothing ever polls the operation, and the note
+  stays claimed. The operation deliberately stays `running` rather than
+  `failed`: visible, consistent with the note, and finishable by anything that
+  later polls it, where a `failed` write would leave nothing to reconcile.
+  `poll_running_operations()` is the sweep; wz2g adds the production
+  scheduler that calls it.
+- **A sustained store outage after the create can lose the handle.** The
+  interaction id write is retried, but if every attempt fails the id survives
+  only in the log, and the poll treats a real paid run as one that never
+  started: the spend is real, the report is never collected. A durable outbox
+  would close this; it is not worth building ahead of wz2g's sweep, which
+  shrinks the window to the same fix.
+
 ### `operations/{id}`
 
 Durable LRO queue (Firestore doc + Cloud Tasks self-rescheduling poll),
