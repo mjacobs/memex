@@ -933,3 +933,62 @@ def test_note_research_route_reports_a_kickoff_that_failed(fs, client, monkeypat
 
     assert r.status_code == 502
     assert r.json()["error"]["code"] == "research_failed"
+
+
+# --- which capture kinds merge ---------------------------------------------
+
+
+def _enrich_capture_of_kind(monkeypatch, kind: str, starter, **capture_fields) -> dict:
+    """Run enrich_capture over a capture of `kind` with a canned enrichment."""
+    import memex.agent.research as research_mod
+    from memex.agent import service
+    from memex.models import Capture
+
+    cap = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        source="api",
+        device_id="dev",
+        kind=kind,
+        research=True,
+        status="pending",
+        **capture_fields,
+    )
+    store.put(cap)
+    monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["rust"]))
+    monkeypatch.setattr(service, "enrich_link", lambda *a: _canned(["sqlite"]))
+    monkeypatch.setattr(research_mod, "start_research_operation", starter)
+    return service.enrich_capture(cap.id)
+
+
+def _recording_starter(calls: list[bool]):
+    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+        calls.append(merge_into_source)
+        return {"operation_id": new_ulid()}
+
+    return starter
+
+
+def test_a_typed_question_merges(fs, monkeypatch):
+    calls: list[bool] = []
+    _enrich_capture_of_kind(
+        monkeypatch, "text", _recording_starter(calls), text="how does pinning work"
+    )
+    assert calls == [True]
+
+
+def test_a_saved_link_does_not_merge(fs, monkeypatch):
+    """Tabby stashes pages to read later.
+
+    Consuming one into a report would take away the page you meant to keep,
+    so a link that asked for research gets a report note beside it.
+    """
+    calls: list[bool] = []
+    _enrich_capture_of_kind(
+        monkeypatch,
+        "link",
+        _recording_starter(calls),
+        url="https://example.com/wal-mode",
+        title="WAL mode",
+    )
+    assert calls == [False]
