@@ -80,10 +80,9 @@ The feed. Both enriched captures and routine output.
 | `kind`           | `"capture" \| "digest" \| "review" \| "link" \| "research"` | digest/review written by routines; link = a saved read-later page; research = a background research report |
 | `capture_id?`    | ulid                                        | kind=capture/link                       |
 | `routine_run_id?`| ulid                                        | kind=digest/review                      |
-| `source_note_id?`| ulid                                        | kind=research: the note that asked for the research. Absent when the note is its own source (see merge, below) |
+| `source_note_id?`| ulid                                        | kind=research: the note that asked for the research |
 | `research_status?`| `"running" \| "completed" \| "failed"`     | a run against this note; absent means nobody asked |
 | `research_operation_id?`| ulid                                  | which operation owns `research_status`; a superseded run's late write is ignored |
-| `original_body?` | string                                      | merged research notes: what `body` said before the report replaced it |
 | `transcript?`    | string                                      | audio captures                          |
 | `body`           | string                                      | canonical text (original text, transcript, image description + caption + source link, or routine markdown) |
 | `summary`        | string                                      |                                         |
@@ -159,31 +158,24 @@ Enrichment path: after a capture note is written, if the capture carried
 `research: true` → start a deep-research operation (create interaction, write
 operation doc, enqueue first poll task).
 
-**Where the report lands depends on why the run started.** A typed or spoken
-capture that asked for research as it was written exists only to pose that
-question, so a separate report note would be the same thing twice in the feed:
-on completion the asking note *becomes* the report (`kind` → `research`, `body` → the
-report, `source_note_id` absent because it is its own source) and what the
-user wrote moves to `original_body`. Every other run leaves its note
-alone and writes a second `research` note whose `source_note_id` points back
-at it: `POST /notes/{id}/research`, chat's `start_research`, and link or image
-captures that asked at capture time — a stashed page or a screenshot is a
-thing in its own right, and consuming one into a report would take away what
-was saved. The operation records which it is in `merge_into_source`.
+**A report is always its own note.** Whichever way a run started — `POST
+/notes/{id}/research`, chat's `start_research`, or a capture that asked for
+research as it was written — the note that asked keeps its own identity, and
+completion writes a *second* note with `kind: "research"` whose
+`source_note_id` points back at it. Research at capture time is not a slower
+capture: the capture note lands as soon as it is enriched, and the report
+arrives later beside it.
 
 `research_status` mirrors the operation onto the note it is about, so a client
 can say a report is coming without joining against the operations queue.
 `research_operation_id` records which run owns that status: a terminal write
 from a run that has since been superseded is dropped rather than clearing a
 newer run's claim, which would let the next tap buy an interaction that is
-already running. A run
-that fails never rewrites `body`: the note goes back to being the capture it
-was, carrying `research_status: "failed"`. That guarantee is load-bearing for
-the merge path, where there is no second note holding the user's words.
-
-A note is `kind: "research"` only once it holds a report. While a merged run
-is in flight the note keeps its original kind and carries
-`research_status: "running"`, so a failed run has nothing to unwind.
+already running. No run ever rewrites the asking note's `body`, `summary`, or
+`tags` — a terminal write touches only those two research fields — so the
+owner can keep editing a note while a run against it is in flight, and a run
+that fails leaves the note exactly as they wrote it, carrying
+`research_status: "failed"`.
 
 **Only an explicit request starts a research run**, because a run spends real
 money and ships the note to an external service. That request is the
@@ -253,8 +245,7 @@ decoupled from any Cloud Run instance. Deep Research is the first kind.
 | `updated_at`     | timestamp                                   | touch on every mutation              |
 | `interaction_id?`| string                                      | the aiplatform handle. Absent while the operation is a kickoff intent written *before* the interaction exists, and after a create whose outcome was never learned — such a run has nothing to poll and is given up on within a few polls |
 | `source_note_id` | ulid                                        | the note that asked for research     |
-| `result_note_id?`| ulid                                        | the `research` note, when completed; equals `source_note_id` when merged |
-| `merge_into_source`| bool                                      | completion rewrites the asking note instead of adding one; set only by the capture-time path |
+| `result_note_id?`| ulid                                        | the `research` note; reserved before the note is written, so a redelivered completion replays onto the same id |
 | `attempts`       | int                                         | poll count; cap ⇒ failed             |
 | `error?`         | string                                      |                                      |
 
@@ -295,8 +286,8 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `GET /api/v1/captures/{id}/image`    | kind=image only                                    | `200` raw image bytes (`Content-Type` = `image_mime`) |
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |
 | `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`; plus `image_url` for image captures |
-| `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event. `409 research_running` while a run is in flight, because the report would overwrite the edit |
-| `POST /api/v1/notes/{id}/research`   |                                                    | `202 {"operation_id", "status": "running"}` — research a note that already exists; never merges. `409 already_running` while one is in flight |
+| `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event. Allowed while a run is in flight — the report lands in its own note |
+| `POST /api/v1/notes/{id}/research`   |                                                    | `202 {"operation_id", "status": "running"}` — research a note that already exists. `409 already_running` while one is in flight |
 | `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete; cascades to capture doc + GCS blob, not tasks |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |
 | `PATCH /api/v1/tasks/{id}`           | `{"status?", "title?", "tags?"}`                   | `200 {task}`                               |
