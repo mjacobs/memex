@@ -230,6 +230,14 @@ running operations (kata `wz2g`).
   started: the spend is real, the report is never collected. A durable outbox
   would close this; it is not worth building ahead of wz2g's sweep, which
   shrinks the window to the same fix.
+- **A crash between the note and its operation leaves the note claimed.**
+  Claiming a note and recording the operation that owns it are two writes, as
+  are settling a terminal operation and releasing its note. Dying between
+  either pair leaves a note reading as `running` whose owning operation is
+  missing or already finished, and nothing polls it. A transaction across the
+  two documents would close it; the cheaper answer is reconciliation — wz2g's
+  sweep picks these up with one more query, for notes claimed by an operation
+  that is gone or terminal.
 
 ### `operations/{id}`
 
