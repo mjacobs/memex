@@ -1156,28 +1156,30 @@ def test_a_superseded_run_still_delivers_its_report_without_freeing_the_note(
     assert refreshed.research_operation_id == new_op_id
 
 
-def test_patching_a_note_under_research_is_refused(fs, client):
-    """The SPA hides the edit button, but a stale page or another client
-    would not know: the refusal has to live on the server."""
+def test_a_note_can_be_edited_while_its_research_runs(
+    fs, enqueued, client, monkeypatch
+):
+    """The run writes its report elsewhere and touches only this note's
+    research status, so an edit and a completion cannot overwrite each other."""
     note = _make_note()
-    store.update(Note, note.id, {"research_status": "running"})
+    op = _make_operation(source_note_id=note.id)
+    store.claim_note_research(note.id, op.id)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
 
     r = client.patch(
-        f"/api/v1/notes/{note.id}", json={"body": "a stale draft"}, headers=AUTH
+        f"/api/v1/notes/{note.id}", json={"body": "a second thought"}, headers=AUTH
     )
-
-    assert r.status_code == 409
-    assert r.json()["error"]["code"] == "research_running"
-    assert store.get(Note, note.id).body == "look into rust pinning"
-
-
-def test_patching_is_allowed_once_the_run_settles(fs, client):
-    note = _make_note()
-    store.update(Note, note.id, {"research_status": "completed"})
-
-    r = client.patch(f"/api/v1/notes/{note.id}", json={"body": "edited"}, headers=AUTH)
-
     assert r.status_code == 200
+
+    out = research.poll_operation(op.id)
+
+    # The edit survived the report, and the report survived the edit.
+    edited = store.get(Note, note.id)
+    assert edited is not None
+    assert edited.body == "a second thought"
+    assert edited.research_status == "completed"
+    report = store.get(Note, out["result_note_id"])
+    assert report is not None and report.body == "# Report\n\nFindings."
 
 
 def test_a_recorded_handle_survives_a_flaky_write(fs, enqueued, monkeypatch):
