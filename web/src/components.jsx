@@ -61,12 +61,7 @@ export function ResearchStatus({ status }) {
     );
   }
   if (status === "failed") {
-    // The report is gone; what the user wrote never left.
-    return (
-      <p className="note-research-status failed">
-        research failed — what you wrote is still here
-      </p>
-    );
+    return <p className="note-research-status failed">research failed</p>;
   }
   return null;
 }
