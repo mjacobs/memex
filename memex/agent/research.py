@@ -233,13 +233,18 @@ def _enqueue_poll(operation_id: str, delay_seconds: int = POLL_DELAY_SECONDS) ->
     client.create_task(parent=parent, task=task)
 
 
-def start_research_operation(note_id: str) -> dict:
+def start_research_operation(note_id: str, merge_into_source: bool = False) -> dict:
     """Start a deep-research operation for a note.
 
     Creates the interaction, writes the operations/{id} doc, enqueues the
     first poll. Returns {"operation_id": ...} or {"error": ...} — never
     raises, because a research kickoff (chat's start_research tool, capture
     enrichment) must not fail its caller.
+
+    `merge_into_source` is the capture-time path: the note was written to ask
+    this question, so completion rewrites it into the report rather than
+    leaving two notes that say the same thing. Runs started against a note
+    that already stands on its own default to False and keep today's shape.
     """
     try:
         note = store.get(Note, note_id)
@@ -253,8 +258,12 @@ def start_research_operation(note_id: str) -> dict:
             updated_at=store.now(),
             interaction_id=interaction_id,
             source_note_id=note_id,
+            merge_into_source=merge_into_source,
         )
         store.put(op)
+        # The note carries the run's state from here on, so a feed card can
+        # say a report is coming without joining against the queue.
+        store.update(Note, note_id, {"research_status": "running"})
     except Exception as exc:
         logger.exception("failed to start research for note %s", note_id)
         return {"error": str(exc)}
@@ -267,6 +276,7 @@ def start_research_operation(note_id: str) -> dict:
         store.update_operation(
             op.id, {"status": "failed", "error": f"enqueue failed: {exc}"}
         )
+        store.update(Note, note_id, {"research_status": "failed"})
         return {"error": f"enqueue failed: {exc}"}
     return {"operation_id": op.id}
 
@@ -326,6 +336,40 @@ def _interaction_error(interaction: dict) -> str:
     return f"interaction ended with status {interaction.get('status')!r}"
 
 
+def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None:
+    """Rewrite the asking note into the report it asked for.
+
+    The capture-time path: the note exists only because the user typed a
+    question and pressed research, so a second note would say the same thing
+    twice. Its own words move to `original_body` rather than being dropped —
+    the report is a derived artefact, the question is the user's.
+
+    Idempotent under Cloud Tasks' at-least-once delivery: a replay re-reads
+    `original_body` as the source text, so the report is rebuilt from the
+    question rather than from the previous report.
+    """
+    note = store.get(Note, op.source_note_id)
+    if note is None:
+        logger.error("merge target note %s is gone", op.source_note_id)
+        return None
+    steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
+    original_body = note.original_body if note.original_body is not None else note.body
+    tags = [t for t in note.tags if t != RESEARCH_REPORT_TAG]
+    changes = {
+        "kind": "research",
+        "body": _report_from_steps(steps),
+        "original_body": original_body,
+        "summary": f"Research report: {note.summary}"
+        if not note.summary.startswith("Research report:")
+        else note.summary,
+        "tags": [RESEARCH_REPORT_TAG, *tags],
+        "research_status": "completed",
+        "trace": [e.model_dump(mode="python") for e in _trace_from_steps(steps)],
+    }
+    store.update(Note, note.id, changes)
+    return store.get(Note, note.id)
+
+
 def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note:
     """Write the `research` note the completed interaction produced.
 
@@ -355,6 +399,21 @@ def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note
     )
     store.put(note)
     return note
+
+
+def _mark_note_failed(note_id: str) -> None:
+    """Tell the asking note its run died.
+
+    A failed run never rewrites `body`, so whatever the user wrote is still
+    there — the note goes back to being what it was, carrying a status the UI
+    can show instead of leaving a card that says a report is coming forever.
+    Best effort: the operation is already settled, and a note deleted in the
+    meantime is not an error worth raising here.
+    """
+    try:
+        store.update(Note, note_id, {"research_status": "failed"})
+    except Exception:
+        logger.exception("could not mark note %s research-failed", note_id)
 
 
 def _deduped(op: Operation) -> dict:
@@ -396,6 +455,7 @@ def poll_operation(operation_id: str) -> dict:
                 op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
             ):
                 return _deduped(op)
+            _mark_note_failed(op.source_note_id)
             return {"operation_id": op.id, "status": "failed", "error": error}
         if not store.transition_operation(op.id, "running", {"attempts": attempts}):
             # Another delivery of this poll already re-enqueued the next one.
@@ -403,16 +463,36 @@ def poll_operation(operation_id: str) -> dict:
         _enqueue_poll(op.id)
         return {"operation_id": op.id, "status": "running", "attempts": attempts}
     if status == "completed":
-        # Reserve the report note's id on the operation first, and only then
-        # write the note and settle: two deliveries racing here both end up
-        # writing the same document id, and a crash between the note and the
-        # settle replays onto that same id instead of adding a second report.
-        note_id = op.result_note_id or new_ulid()
-        if op.result_note_id is None and not store.transition_operation(
-            op.id, "running", {"result_note_id": note_id}
-        ):
-            return _deduped(op)
-        note = _write_research_note(op, interaction, note_id)
+        if op.merge_into_source:
+            # The asking note becomes the report, so there is no id to
+            # reserve; the compare-and-set on the operation is what keeps a
+            # second delivery from rewriting it.
+            if not store.transition_operation(
+                op.id, "running", {"result_note_id": op.source_note_id}
+            ):
+                return _deduped(op)
+            note = _merge_research_into_source(op, interaction)
+            if note is None:
+                error = f"merge target note {op.source_note_id} is gone"
+                store.update_operation(
+                    op.id, {"status": "failed", "attempts": attempts, "error": error}
+                )
+                return {"operation_id": op.id, "status": "failed", "error": error}
+        else:
+            # Reserve the report note's id on the operation first, and only
+            # then write the note and settle: two deliveries racing here both
+            # end up writing the same document id, and a crash between the
+            # note and the settle replays onto that same id instead of adding
+            # a second report.
+            note_id = op.result_note_id or new_ulid()
+            if op.result_note_id is None and not store.transition_operation(
+                op.id, "running", {"result_note_id": note_id}
+            ):
+                return _deduped(op)
+            note = _write_research_note(op, interaction, note_id)
+            # The asking note stops saying a report is coming; the report
+            # itself is the other note.
+            store.update(Note, op.source_note_id, {"research_status": "completed"})
         store.update_operation(
             op.id,
             {"status": "completed", "attempts": attempts, "result_note_id": note.id},
@@ -427,4 +507,5 @@ def poll_operation(operation_id: str) -> dict:
         op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
     ):
         return _deduped(op)
+    _mark_note_failed(op.source_note_id)
     return {"operation_id": op.id, "status": "failed", "error": error}

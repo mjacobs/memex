@@ -190,6 +190,10 @@ def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResu
 def start_requested_research(note: Note) -> dict:
     """Kick off the deep-research run the capture explicitly asked for.
 
+    Started with `merge_into_source`: this note exists because the user typed
+    a question and asked for research on it, so the report belongs in this
+    note rather than in a second one that repeats it.
+
     Called only when `capture.research` is set — the enrichment model's tags
     never reach this (docs/contracts.md). Failure to *start* must never fail
     the capture: the user still has their note and can retry from chat
@@ -202,7 +206,7 @@ def start_requested_research(note: Note) -> dict:
     from memex.agent.research import start_research_operation
 
     try:
-        result = start_research_operation(note.id)
+        result = start_research_operation(note.id, merge_into_source=True)
     except Exception as exc:  # start_research_operation shouldn't raise, but even so
         logger.exception("failed to start research for note %s", note.id)
         return {"error": str(exc)}
