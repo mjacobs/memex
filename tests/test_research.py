@@ -505,7 +505,7 @@ def _enrich_text_capture(
 def test_enrichment_starts_research_when_the_capture_asked(fs, monkeypatch):
     started: list[str] = []
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         started.append(note_id)
         return {"operation_id": new_ulid()}
 
@@ -525,7 +525,7 @@ def test_a_research_tag_alone_starts_nothing(fs, monkeypatch):
     from a web page, so `research` in them is a topic label and nothing more.
     """
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         raise AssertionError("a model-emitted tag must not start a paid run")
 
     out = _enrich_text_capture(monkeypatch, ["research", "rust"], starter)
@@ -536,7 +536,7 @@ def test_a_research_tag_alone_starts_nothing(fs, monkeypatch):
 
 
 def test_research_start_failure_never_fails_the_capture(fs, monkeypatch):
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         raise RuntimeError("cloud tasks exploded")
 
     out = _enrich_text_capture(
@@ -552,7 +552,7 @@ def test_research_start_failure_never_fails_the_capture(fs, monkeypatch):
 
 
 def test_enrichment_result_carries_the_operation_id(fs, monkeypatch):
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         return {"operation_id": "op-1"}
 
     out = _enrich_text_capture(
@@ -572,7 +572,7 @@ def test_capture_response_surfaces_the_operation_id(client, fs, monkeypatch):
 
     monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["rust"]))
     monkeypatch.setattr(
-        research, "start_research_operation", lambda note_id, merge_into_source=False: {"operation_id": "op-9"}
+        research, "start_research_operation", lambda note_id: {"operation_id": "op-9"}
     )
 
     r = client.post(
@@ -622,7 +622,7 @@ def test_a_page_that_says_research_this_cannot_spend_money(fs, monkeypatch):
     "Research this" used to be enough to start a billed run.
     """
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         raise AssertionError("page text must not start a paid research run")
 
     for caption in (None, "save this"):
@@ -635,7 +635,7 @@ def test_a_page_that_says_research_this_cannot_spend_money(fs, monkeypatch):
 def test_link_that_asked_for_research_starts_it(fs, monkeypatch):
     started: list[str] = []
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         started.append(note_id)
         return {"operation_id": "op-2"}
 
@@ -654,7 +654,7 @@ def test_capture_endpoints_carry_the_research_flag(client, fs, fake_gcs, monkeyp
 
     monkeypatch.setattr(service, "enrich_link", lambda url, title, n: _canned(["rust"]))
     monkeypatch.setattr(
-        research, "start_research_operation", lambda note_id, merge_into_source=False: {"operation_id": "op-3"}
+        research, "start_research_operation", lambda note_id: {"operation_id": "op-3"}
     )
 
     r = client.post(
@@ -688,7 +688,7 @@ def test_link_endpoints_surface_the_operation_they_started(client, fs, monkeypat
 
     monkeypatch.setattr(service, "enrich_link", lambda url, title, n: _canned(["rust"]))
     monkeypatch.setattr(
-        research, "start_research_operation", lambda note_id, merge_into_source=False: {"error": "no quota"}
+        research, "start_research_operation", lambda note_id: {"error": "no quota"}
     )
 
     r = client.post(
@@ -714,7 +714,7 @@ def test_capture_research_flag_defaults_off(client, fs, monkeypatch):
 
     monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["research"]))
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+    def starter(note_id: str) -> dict:
         raise AssertionError("an omitted flag must not start a paid research run")
 
     monkeypatch.setattr(research, "start_research_operation", starter)
@@ -752,7 +752,7 @@ def test_poll_running_operations_sweeps_and_survives_failures(fs, monkeypatch):
     assert results == [{"operation_id": ok.id, "status": "running"}]
 
 
-# --- capture-time merge: one note is both the question and the report -------
+# --- the asking note is never the report ------------------------------------
 
 
 def _report_interaction(text: str = "# Report\n\nFindings.") -> dict:
@@ -762,70 +762,14 @@ def _report_interaction(text: str = "# Report\n\nFindings.") -> dict:
     }
 
 
-def test_merge_rewrites_the_asking_note_instead_of_adding_one(fs, enqueued, monkeypatch):
-    """The capture-time path: the note that asked becomes the report.
+def test_a_failed_run_leaves_the_note_exactly_as_it_was(fs, enqueued, monkeypatch):
+    """A run is additive: it can only ever add a note beside this one.
 
-    A capture written only to pose a question, plus a report note repeating
-    it, is the same thing twice in the feed.
-    """
-    source = _make_note(tags=["rust"], body="how does rust pinning actually work")
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
-    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
-
-    before = len(store.query(Note, limit=100))
-    out = research.poll_operation(op.id)
-
-    assert out["status"] == "completed"
-    assert out["result_note_id"] == source.id
-    assert len(store.query(Note, limit=100)) == before, "no second note"
-
-    note = store.get(Note, source.id)
-    assert note is not None
-    assert note.kind == "research"
-    assert note.body == "# Report\n\nFindings."
-    # The user's own words are the one thing the report must not eat.
-    assert note.original_body == "how does rust pinning actually work"
-    assert note.research_status == "completed"
-    assert note.summary.startswith("Research report:")
-    assert "research-report" in note.tags and "rust" in note.tags
-    # It is its own source, so there is no other note to point at.
-    assert note.source_note_id is None
-
-
-def test_a_merge_replay_rebuilds_from_the_question_not_the_report(
-    fs, enqueued, monkeypatch
-):
-    """Cloud Tasks delivers at least once, so completion can run twice.
-
-    The second pass must re-read `original_body` as the source text; reading
-    `body` would feed the previous report back in as the question.
+    So a run that dies takes nothing with it — the note keeps its own words
+    and its own kind, and says only that the run failed.
     """
     source = _make_note(body="how does rust pinning actually work")
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
-    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
-
-    research.poll_operation(op.id)
-    # A replay finds the operation already settled and leaves it alone, so
-    # drive the merge directly to prove the rewrite itself is idempotent.
-    research._merge_research_into_source(store.get(Operation, op.id), _report_interaction())
-
-    note = store.get(Note, source.id)
-    assert note is not None
-    assert note.original_body == "how does rust pinning actually work"
-    assert note.body == "# Report\n\nFindings."
-    assert note.summary.count("Research report:") == 1
-    assert note.tags.count("research-report") == 1
-
-
-def test_a_failed_run_hands_back_what_the_user_wrote(fs, enqueued, monkeypatch):
-    """The case that justifies dropping the capture note.
-
-    With no second note behind it, a merged run that dies is the only thing
-    standing between the user and a lost thought — so failure must leave the
-    note exactly as they wrote it.
-    """
-    source = _make_note(body="how does rust pinning actually work")
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
+    op = _make_operation(source_note_id=source.id)
     monkeypatch.setattr(
         research,
         "_get_interaction",
@@ -839,7 +783,6 @@ def test_a_failed_run_hands_back_what_the_user_wrote(fs, enqueued, monkeypatch):
     assert note is not None
     assert note.body == "how does rust pinning actually work"
     assert note.kind == "capture", "a note with no report is not a research note"
-    assert note.original_body is None
     assert note.research_status == "failed"
 
 
@@ -847,7 +790,6 @@ def test_giving_up_after_the_poll_cap_also_frees_the_note(fs, enqueued, monkeypa
     source = _make_note()
     op = _make_operation(
         source_note_id=source.id,
-        merge_into_source=True,
         attempts=research.MAX_ATTEMPTS - 1,
     )
     monkeypatch.setattr(
@@ -861,16 +803,14 @@ def test_giving_up_after_the_poll_cap_also_frees_the_note(fs, enqueued, monkeypa
     assert note is not None and note.research_status == "failed"
 
 
-def test_research_on_an_existing_note_still_writes_a_second_note(
-    fs, enqueued, monkeypatch
-):
-    """A note that already stands on its own keeps its own identity.
+def test_the_note_that_asked_keeps_its_own_identity(fs, enqueued, monkeypatch):
+    """Researching a link saved three weeks ago must not consume that link.
 
-    Researching a link saved three weeks ago should not turn that link into a
-    report; only the capture-time path merges.
+    The report is a second note; the one that asked is left exactly as it was,
+    minus the badge saying a report is coming.
     """
     source = _make_note(tags=["sqlite"], body="https://example.com/wal-mode")
-    op = _make_operation(source_note_id=source.id)  # merge_into_source defaults False
+    op = _make_operation(source_note_id=source.id)
     monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
 
     out = research.poll_operation(op.id)
@@ -890,10 +830,10 @@ def test_research_on_an_existing_note_still_writes_a_second_note(
 
 def test_note_research_route_starts_a_run(fs, client, monkeypatch):
     note = _make_note()
-    calls: list[tuple[str, bool]] = []
+    calls: list[str] = []
 
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
-        calls.append((note_id, merge_into_source))
+    def starter(note_id: str) -> dict:
+        calls.append(note_id)
         store.update(Note, note_id, {"research_status": "running"})
         return {"operation_id": "op-77"}
 
@@ -903,8 +843,7 @@ def test_note_research_route_starts_a_run(fs, client, monkeypatch):
 
     assert r.status_code == 202
     assert r.json() == {"operation_id": "op-77", "status": "running"}
-    # An existing note keeps its identity: this path never merges.
-    assert calls == [(note.id, False)]
+    assert calls == [note.id]
 
 
 def test_note_research_route_refuses_a_second_concurrent_run(
@@ -941,72 +880,13 @@ def test_note_research_route_reports_a_kickoff_that_failed(fs, client, monkeypat
     monkeypatch.setattr(
         research,
         "start_research_operation",
-        lambda note_id, merge_into_source=False: {"error": "no quota"},
+        lambda note_id: {"error": "no quota"},
     )
 
     r = client.post(f"/api/v1/notes/{note.id}/research", headers=AUTH)
 
     assert r.status_code == 502
     assert r.json()["error"]["code"] == "research_failed"
-
-
-# --- which capture kinds merge ---------------------------------------------
-
-
-def _enrich_capture_of_kind(monkeypatch, kind: str, starter, **capture_fields) -> dict:
-    """Run enrich_capture over a capture of `kind` with a canned enrichment."""
-    import memex.agent.research as research_mod
-    from memex.agent import service
-    from memex.models import Capture
-
-    cap = Capture(
-        id=new_ulid(),
-        created_at=store.now(),
-        source="api",
-        device_id="dev",
-        kind=kind,
-        research=True,
-        status="pending",
-        **capture_fields,
-    )
-    store.put(cap)
-    monkeypatch.setattr(service, "enrich_text", lambda text: _canned(["rust"]))
-    monkeypatch.setattr(service, "enrich_link", lambda *a: _canned(["sqlite"]))
-    monkeypatch.setattr(research_mod, "start_research_operation", starter)
-    return service.enrich_capture(cap.id)
-
-
-def _recording_starter(calls: list[bool]):
-    def starter(note_id: str, merge_into_source: bool = False) -> dict:
-        calls.append(merge_into_source)
-        return {"operation_id": new_ulid()}
-
-    return starter
-
-
-def test_a_typed_question_merges(fs, monkeypatch):
-    calls: list[bool] = []
-    _enrich_capture_of_kind(
-        monkeypatch, "text", _recording_starter(calls), text="how does pinning work"
-    )
-    assert calls == [True]
-
-
-def test_a_saved_link_does_not_merge(fs, monkeypatch):
-    """Tabby stashes pages to read later.
-
-    Consuming one into a report would take away the page you meant to keep,
-    so a link that asked for research gets a report note beside it.
-    """
-    calls: list[bool] = []
-    _enrich_capture_of_kind(
-        monkeypatch,
-        "link",
-        _recording_starter(calls),
-        url="https://example.com/wal-mode",
-        title="WAL mode",
-    )
-    assert calls == [False]
 
 
 def test_only_one_of_two_racing_kickoffs_creates_an_interaction(
@@ -1058,10 +938,10 @@ def test_a_kickoff_that_dies_hands_the_note_back(fs, enqueued, monkeypatch):
     assert store.claim_note_research(note.id, new_ulid()) is True
 
 
-def test_merging_keeps_the_notes_own_trace(fs, enqueued, monkeypatch):
+def test_completion_leaves_the_asking_notes_trace_alone(fs, enqueued, monkeypatch):
     """The trace is the honesty surface: how the note became a note, plus a
-    user event per owner edit. The report is appended to that history, not
-    written over it."""
+    user event per owner edit. The report's reasoning belongs to the report's
+    own note, and completion must not touch this one's history."""
     source = _make_note()
     store.update(
         Note,
@@ -1074,22 +954,23 @@ def test_merging_keeps_the_notes_own_trace(fs, enqueued, monkeypatch):
             ]
         },
     )
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
+    op = _make_operation(source_note_id=source.id)
     monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
 
-    research.poll_operation(op.id)
+    out = research.poll_operation(op.id)
 
     note = store.get(Note, source.id)
     assert note is not None
-    texts = [e.text for e in note.trace]
-    assert "Edited summary" in texts, "the note's own history survived"
-    assert "# Report\n\nFindings." in texts, "the report's steps were added"
+    assert [e.text for e in note.trace] == ["Edited summary"]
+    report = store.get(Note, out["result_note_id"])
+    assert report is not None
+    assert [e.text for e in report.trace] == ["# Report\n\nFindings."]
 
 
 def test_two_completion_deliveries_write_one_report(fs, enqueued, monkeypatch):
     """Cloud Tasks delivers at least once, and both deliveries can read the
-    operation as running: reserving the result has to be exclusive, or the
-    split path writes two report notes."""
+    operation as running: reserving the result has to be exclusive, or
+    completion writes two report notes."""
     source = _make_note()
     op = _make_operation(source_note_id=source.id)
     monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
@@ -1203,51 +1084,6 @@ def test_a_handleless_run_gives_the_note_back_after_a_short_wait(
     assert store.claim_note_research(note.id, new_ulid()) is True
 
 
-def test_resuming_a_merge_does_not_write_the_report_trace_twice(
-    fs, enqueued, monkeypatch
-):
-    """Two deliveries can both resume a reserved merge; the second must find
-    the report's reasoning already recorded and add nothing."""
-    source = _make_note()
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
-    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
-
-    research.poll_operation(op.id)
-    once = [(e.role, e.text) for e in store.get(Note, source.id).trace]
-    research._merge_research_into_source(
-        store.get(Operation, op.id), _report_interaction()
-    )
-    twice = [(e.role, e.text) for e in store.get(Note, source.id).trace]
-
-    assert once == twice
-
-
-def test_a_merge_that_failed_after_reserving_can_resume(fs, enqueued, monkeypatch):
-    """The reservation must not dedupe an operation against itself, or a
-    merge that threw mid-flight leaves the run permanently running."""
-    source = _make_note()
-    op = _make_operation(source_note_id=source.id, merge_into_source=True)
-    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
-
-    # First pass reserves, then dies inside the merge.
-    real_merge = research._merge_research_into_source
-
-    def boom(*args, **kwargs):
-        raise RuntimeError("crash")
-
-    monkeypatch.setattr(research, "_merge_research_into_source", boom)
-    with pytest.raises(RuntimeError):
-        research.poll_operation(op.id)
-    assert store.get(Operation, op.id).result_note_id == source.id
-
-    # The redelivery resumes rather than deduping against its own reservation.
-    monkeypatch.setattr(research, "_merge_research_into_source", real_merge)
-    out = research.poll_operation(op.id)
-
-    assert out["status"] == "completed"
-    assert store.get(Operation, op.id).status == "completed"
-
-
 def test_a_transient_note_failure_does_not_settle_the_operation(
     fs, enqueued, monkeypatch
 ):
@@ -1313,21 +1149,31 @@ def test_a_superseded_runs_late_write_cannot_free_the_note(fs, enqueued, monkeyp
     assert store.claim_note_research(note.id, new_ulid()) is False
 
 
-def test_a_merge_from_a_superseded_run_does_not_rewrite_the_note(
+def test_a_superseded_run_still_delivers_its_report_without_freeing_the_note(
     fs, enqueued, monkeypatch
 ):
+    """A slow run whose note a newer run now owns finishes anyway.
+
+    Its report was paid for, so it is written; but clearing the status would
+    say the newer run is over, and the next tap would buy an interaction that
+    is already running.
+    """
     note = _make_note(body="the original question")
-    old_op = _make_operation(source_note_id=note.id, merge_into_source=True)
-    store.claim_note_research(note.id, new_ulid())  # a newer run owns it
+    old_op = _make_operation(source_note_id=note.id)
+    new_op_id = new_ulid()
+    store.claim_note_research(note.id, new_op_id)  # a newer run owns it
     monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
 
     out = research.poll_operation(old_op.id)
 
-    assert out["status"] == "failed"
+    assert out["status"] == "completed"
+    report = store.get(Note, out["result_note_id"])
+    assert report is not None and report.source_note_id == note.id
     refreshed = store.get(Note, note.id)
     assert refreshed is not None
-    assert refreshed.body == "the original question", "not rewritten by the old run"
-    assert refreshed.kind == "capture"
+    assert refreshed.body == "the original question", "not rewritten by any run"
+    assert refreshed.research_status == "running"
+    assert refreshed.research_operation_id == new_op_id
 
 
 def test_patching_a_note_under_research_is_refused(fs, client):

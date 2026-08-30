@@ -187,7 +187,7 @@ def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResu
     return EnrichmentResult.model_validate_json(response.text)
 
 
-def start_requested_research(note: Note, merge_into_source: bool = False) -> dict:
+def start_requested_research(note: Note) -> dict:
     """Kick off the deep-research run the capture explicitly asked for.
 
     Called only when `capture.research` is set — the enrichment model's tags
@@ -202,9 +202,7 @@ def start_requested_research(note: Note, merge_into_source: bool = False) -> dic
     from memex.agent.research import start_research_operation
 
     try:
-        result = start_research_operation(
-            note.id, merge_into_source=merge_into_source
-        )
+        result = start_research_operation(note.id)
     except Exception as exc:  # start_research_operation shouldn't raise, but even so
         logger.exception("failed to start research for note %s", note.id)
         return {"error": str(exc)}

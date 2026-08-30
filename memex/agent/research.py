@@ -37,7 +37,7 @@ local operations still make progress (tests drive `poll_operation` directly).
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import google.auth
 import google.auth.transport.requests
@@ -258,7 +258,7 @@ def _enqueue_poll(operation_id: str, delay_seconds: int = POLL_DELAY_SECONDS) ->
     client.create_task(parent=parent, task=task)
 
 
-def start_research_operation(note_id: str, merge_into_source: bool = False) -> dict:
+def start_research_operation(note_id: str) -> dict:
     """Start a deep-research operation for a note.
 
     Creates the interaction, writes the operations/{id} doc, enqueues the
@@ -266,10 +266,8 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
     raises, because a research kickoff (chat's start_research tool, capture
     enrichment) must not fail its caller.
 
-    `merge_into_source` is the capture-time path: the note was written to ask
-    this question, so completion rewrites it into the report rather than
-    leaving two notes that say the same thing. Runs started against a note
-    that already stands on its own default to False and keep today's shape.
+    The asking note is never rewritten: completion writes the report as its
+    own `research` note pointing back here (contracts.md).
     """
     note = store.get(Note, note_id)
     if note is None:
@@ -298,7 +296,6 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         updated_at=store.now(),
         interaction_id=None,
         source_note_id=note_id,
-        merge_into_source=merge_into_source,
     )
     try:
         store.put(op)
@@ -432,21 +429,15 @@ def _report_from_steps(steps: list[dict]) -> str:
     return _step_text(steps[-1]) if steps else ""
 
 
-def _trace_from_steps(steps: list, t: datetime | None = None) -> list[TraceEvent]:
-    """Map Deep Research steps to the contract's TraceEvent shape.
-
-    `t` stamps every event with one fixed time instead of the wall clock. The
-    merge passes the operation's own created_at so two deliveries produce
-    byte-identical events, which is what lets Firestore's array union treat
-    the second one as nothing to add.
-    """
+def _trace_from_steps(steps: list) -> list[TraceEvent]:
+    """Map Deep Research steps to the contract's TraceEvent shape."""
     events: list[TraceEvent] = []
     for step in steps:
         if not isinstance(step, dict):
             continue
         text = _step_trace_text(step)
         if text:
-            events.append(TraceEvent(t=t or store.now(), role="model", text=text))
+            events.append(TraceEvent(t=store.now(), role="model", text=text))
     return events
 
 
@@ -457,66 +448,6 @@ def _interaction_error(interaction: dict) -> str:
             str(e.get("message", e)) if isinstance(e, dict) else str(e) for e in errors
         )
     return f"interaction ended with status {interaction.get('status')!r}"
-
-
-def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None:
-    """Rewrite the asking note into the report it asked for.
-
-    The capture-time path: the note exists only because the user typed a
-    question and pressed research, so a second note would say the same thing
-    twice. Its own words move to `original_body` rather than being dropped —
-    the report is a derived artefact, the question is the user's.
-
-    Idempotent under Cloud Tasks' at-least-once delivery: a replay re-reads
-    `original_body` as the source text, so the report is rebuilt from the
-    question rather than from the previous report.
-    """
-    note = store.get(Note, op.source_note_id)
-    if note is None:
-        logger.error("merge target note %s is gone", op.source_note_id)
-        return None
-    # Known narrow window: an owner edit landing between this read and the
-    # update below is overwritten, and original_body would keep the body as
-    # it was read. Closing it needs a transactional read-modify-write, which
-    # the store does not do today; the exposure is one user editing a note in
-    # the instant its report lands, and the edit's own trace event survives.
-    steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
-    original_body = note.original_body if note.original_body is not None else note.body
-    tags = [t for t in note.tags if t != RESEARCH_REPORT_TAG]
-    already_traced = {(e.role, e.text) for e in note.trace}
-    changes = {
-        "kind": "research",
-        "body": _report_from_steps(steps),
-        "original_body": original_body,
-        "summary": f"Research report: {note.summary}"
-        if not note.summary.startswith("Research report:")
-        else note.summary,
-        "tags": [RESEARCH_REPORT_TAG, *tags],
-    }
-    # The trace is appended, never replaced: the note already carries how it
-    # became a note, plus a user event for every owner edit, and overwriting
-    # that to make room for the report's reasoning would erase the note's own
-    # provenance. Appended server-side so a concurrent edit's event is not
-    # lost, and filtered against what is already there so two deliveries
-    # resuming the same merge cannot write it twice — the events carry their
-    # own timestamps, so Firestore's value dedupe would not catch that.
-    new_trace = [
-        e.model_dump(mode="python")
-        # Stamped with the operation's own creation time, not the wall clock,
-        # so two deliveries of this merge produce identical events.
-        for e in _trace_from_steps(steps, t=op.created_at)
-        if (e.role, e.text) not in already_traced
-    ]
-    if new_trace:
-        # An empty union is an error, and a redelivery that finds every event
-        # already recorded has nothing to add.
-        changes["trace"] = store.array_union(new_trace)
-    # Ownership-guarded like every other terminal write: a merge belonging to
-    # a superseded run must not rewrite a note a newer run has claimed.
-    if not store.settle_note_research(note.id, op.id, "completed", extra=changes):
-        logger.info("note %s is no longer owned by run %s; not merged", note.id, op.id)
-        return None
-    return store.get(Note, note.id)
 
 
 def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note:
@@ -633,49 +564,25 @@ def poll_operation(operation_id: str) -> dict:
         _enqueue_poll(op.id)
         return {"operation_id": op.id, "status": "running", "attempts": attempts}
     if status == "completed":
-        # One exclusive reservation for both shapes. Reserving and settling
-        # are two writes, and a second delivery arriving between them reads
-        # the operation as still running: without conditioning on the result
-        # being unset, both deliveries write, which is two report notes on
-        # one path and two merges on the other.
-        if op.merge_into_source:
-            # Resume if this operation already owns the reservation: a merge
-            # that threw after reserving would otherwise find the id taken,
-            # dedupe against itself, and leave the run permanently running.
-            # Two deliveries resuming at once can both merge, which appends
-            # the report's trace events twice — cosmetic, and the cheaper
-            # failure than a run that can never finish.
-            if op.result_note_id != op.source_note_id and not (
-                store.reserve_operation_result(op.id, op.source_note_id)
-            ):
-                return _deduped(op)
-            note = _merge_research_into_source(op, interaction)
-            if note is None:
-                error = (
-                    f"note {op.source_note_id} could not be merged: it is gone, "
-                    "or a newer run owns it"
-                )
-                store.update_operation(
-                    op.id, {"status": "failed", "attempts": attempts, "error": error}
-                )
-                return {"operation_id": op.id, "status": "failed", "error": error}
-        else:
-            # Reserve the report note's id on the operation first, and only
-            # then write the note and settle, so a crash between the note and
-            # the settle replays onto that same id instead of adding a second
-            # report.
-            note_id = op.result_note_id or new_ulid()
-            if op.result_note_id is None and not store.reserve_operation_result(
-                op.id, note_id
-            ):
-                return _deduped(op)
-            note = _write_research_note(op, interaction, note_id)
-            # The asking note stops saying a report is coming; the report
-            # itself is the other note. A note deleted mid-run, or one a newer
-            # run already owns, has nothing to hear from this one — but a
-            # transient failure still raises, so the poll comes back rather
-            # than settling against a note stuck reading as running.
-            store.settle_note_research(op.source_note_id, op.id, "completed")
+        # Reserve the report note's id on the operation first, and only then
+        # write the note and settle, so a crash between the note and the
+        # settle replays onto that same id instead of adding a second report.
+        # Reserving and settling are two writes, and a second delivery
+        # arriving between them reads the operation as still running: without
+        # conditioning on the result being unset, both deliveries write, which
+        # is two report notes in the feed.
+        note_id = op.result_note_id or new_ulid()
+        if op.result_note_id is None and not store.reserve_operation_result(
+            op.id, note_id
+        ):
+            return _deduped(op)
+        note = _write_research_note(op, interaction, note_id)
+        # The asking note stops saying a report is coming; the report itself
+        # is the other note. A note deleted mid-run, or one a newer run
+        # already owns, has nothing to hear from this one — but a transient
+        # failure still raises, so the poll comes back rather than settling
+        # against a note stuck reading as running.
+        store.settle_note_research(op.source_note_id, op.id, "completed")
         store.update_operation(
             op.id,
             {"status": "completed", "attempts": attempts, "result_note_id": note.id},

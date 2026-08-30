@@ -110,11 +110,9 @@ class Note(_Tagged):
     summary: str
     tags: list[str] = Field(default_factory=list)
     task_ids: list[str] = Field(default_factory=list)
-    # kind=research: the note that asked for the research. None when the note
-    # is its own source — a capture that asked for research as it was written
-    # becomes the report rather than spawning a second note.
+    # kind=research: the note that asked for the research.
     source_note_id: str | None = None
-    # Set on any note with a run against it, whichever note ends up holding
+    # Set on the note a run was started against — the one that asked, never
     # the report. None means nobody ever asked.
     research_status: ResearchStatus | None = None
     # Which operation owns that status. A late write from a run that has
@@ -188,12 +186,10 @@ class Operation(BaseModel):
     # after a create whose outcome we never learned.
     interaction_id: str | None = None
     source_note_id: str
+    # The `research` note holding the report. Reserved before that note is
+    # written, so a redelivered completion replays onto the same id instead of
+    # adding a second report.
     result_note_id: str | None = None
-    # True when completion should rewrite source_note_id in place instead of
-    # writing a second note: the capture asked for research as it was written,
-    # so one note is the question and the answer. A run started later against
-    # a note that already stands on its own leaves it alone.
-    merge_into_source: bool = False
     attempts: int = 0
     error: str | None = None
 
