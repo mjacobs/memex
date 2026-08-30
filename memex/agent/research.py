@@ -363,6 +363,11 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
     if note is None:
         logger.error("merge target note %s is gone", op.source_note_id)
         return None
+    # Known narrow window: an owner edit landing between this read and the
+    # update below is overwritten, and original_body would keep the body as
+    # it was read. Closing it needs a transactional read-modify-write, which
+    # the store does not do today; the exposure is one user editing a note in
+    # the instant its report lands, and the edit's own trace event survives.
     steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
     original_body = note.original_body if note.original_body is not None else note.body
     tags = [t for t in note.tags if t != RESEARCH_REPORT_TAG]
@@ -470,11 +475,16 @@ def poll_operation(operation_id: str) -> dict:
     if status == "in_progress":
         if attempts >= MAX_ATTEMPTS:
             error = f"gave up after {attempts} polls"
+            # Free the note first. Settling the operation first and dying in
+            # between leaves a settled run against a note that still says it
+            # is running — and a redelivery dedupes on the settled operation
+            # and never repairs it, so the note could never be researched
+            # again. This order can only repeat a harmless write.
+            _mark_note_failed(op.source_note_id)
             if not store.transition_operation(
                 op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
             ):
                 return _deduped(op)
-            _mark_note_failed(op.source_note_id)
             return {"operation_id": op.id, "status": "failed", "error": error}
         if not store.transition_operation(op.id, "running", {"attempts": attempts}):
             # Another delivery of this poll already re-enqueued the next one.
@@ -482,13 +492,13 @@ def poll_operation(operation_id: str) -> dict:
         _enqueue_poll(op.id)
         return {"operation_id": op.id, "status": "running", "attempts": attempts}
     if status == "completed":
+        # One exclusive reservation for both shapes. Reserving and settling
+        # are two writes, and a second delivery arriving between them reads
+        # the operation as still running: without conditioning on the result
+        # being unset, both deliveries write, which is two report notes on
+        # one path and two merges on the other.
         if op.merge_into_source:
-            # The asking note becomes the report, so there is no id to
-            # reserve; the compare-and-set on the operation is what keeps a
-            # second delivery from rewriting it.
-            if not store.transition_operation(
-                op.id, "running", {"result_note_id": op.source_note_id}
-            ):
+            if not store.reserve_operation_result(op.id, op.source_note_id):
                 return _deduped(op)
             note = _merge_research_into_source(op, interaction)
             if note is None:
@@ -499,13 +509,12 @@ def poll_operation(operation_id: str) -> dict:
                 return {"operation_id": op.id, "status": "failed", "error": error}
         else:
             # Reserve the report note's id on the operation first, and only
-            # then write the note and settle: two deliveries racing here both
-            # end up writing the same document id, and a crash between the
-            # note and the settle replays onto that same id instead of adding
-            # a second report.
+            # then write the note and settle, so a crash between the note and
+            # the settle replays onto that same id instead of adding a second
+            # report.
             note_id = op.result_note_id or new_ulid()
-            if op.result_note_id is None and not store.transition_operation(
-                op.id, "running", {"result_note_id": note_id}
+            if op.result_note_id is None and not store.reserve_operation_result(
+                op.id, note_id
             ):
                 return _deduped(op)
             note = _write_research_note(op, interaction, note_id)
@@ -529,9 +538,11 @@ def poll_operation(operation_id: str) -> dict:
             "result_note_id": note.id,
         }
     error = _interaction_error(interaction)
+    # Same order as the give-up path above: the note is freed before the
+    # operation settles, so a crash between them cannot strand it.
+    _mark_note_failed(op.source_note_id)
     if not store.transition_operation(
         op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
     ):
         return _deduped(op)
-    _mark_note_failed(op.source_note_id)
     return {"operation_id": op.id, "status": "failed", "error": error}
