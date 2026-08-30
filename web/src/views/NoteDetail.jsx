@@ -208,20 +208,26 @@ export default function NoteDetail({ id }) {
 
   function startEdit() {
     setConfirmingDelete(false);
+    // `base` is the note as it looked when the edit opened, kept alongside the
+    // draft: what is saved is the difference between the two. Diffing against
+    // the live note instead would let a refetch — the research poll, or
+    // another client's change arriving through it — turn a field the user
+    // never touched into an edit that overwrites them.
     setDraft({
       summary: note.summary || "",
       body: note.body || "",
       tags: tagsToText(note.tags),
+      base: { summary: note.summary || "", body: note.body || "", tags: note.tags || [] },
     });
   }
 
   function save() {
     // Send only what actually changed, so the trace event names real edits.
     const changes = {};
-    if (draft.summary !== (note.summary || "")) changes.summary = draft.summary;
-    if (draft.body !== (note.body || "")) changes.body = draft.body;
+    if (draft.summary !== draft.base.summary) changes.summary = draft.summary;
+    if (draft.body !== draft.base.body) changes.body = draft.body;
     const tags = textToTags(draft.tags);
-    if (!sameTags(tags, note.tags || [])) changes.tags = tags;
+    if (!sameTags(tags, draft.base.tags)) changes.tags = tags;
     if (Object.keys(changes).length === 0) {
       setDraft(null);
       return;
