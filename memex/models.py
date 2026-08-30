@@ -183,8 +183,10 @@ class Operation(BaseModel):
     status: OperationStatus = "running"
     created_at: datetime
     updated_at: datetime
-    # The aiplatform interaction handle (kind=deep_research).
-    interaction_id: str
+    # The aiplatform interaction handle (kind=deep_research). None while the
+    # operation is a kickoff intent written before the interaction exists, and
+    # after a create whose outcome we never learned.
+    interaction_id: str | None = None
     source_note_id: str
     result_note_id: str | None = None
     # True when completion should rewrite source_note_id in place instead of
