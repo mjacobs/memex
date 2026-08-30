@@ -82,6 +82,7 @@ The feed. Both enriched captures and routine output.
 | `routine_run_id?`| ulid                                        | kind=digest/review                      |
 | `source_note_id?`| ulid                                        | kind=research: the note that asked for the research. Absent when the note is its own source (see merge, below) |
 | `research_status?`| `"running" \| "completed" \| "failed"`     | a run against this note; absent means nobody asked |
+| `research_operation_id?`| ulid                                  | which operation owns `research_status`; a superseded run's late write is ignored |
 | `original_body?` | string                                      | merged research notes: what `body` said before the report replaced it |
 | `transcript?`    | string                                      | audio captures                          |
 | `body`           | string                                      | canonical text (original text, transcript, image description + caption + source link, or routine markdown) |
@@ -171,7 +172,11 @@ thing in its own right, and consuming one into a report would take away what
 was saved. The operation records which it is in `merge_into_source`.
 
 `research_status` mirrors the operation onto the note it is about, so a client
-can say a report is coming without joining against the operations queue. A run
+can say a report is coming without joining against the operations queue.
+`research_operation_id` records which run owns that status: a terminal write
+from a run that has since been superseded is dropped rather than clearing a
+newer run's claim, which would let the next tap buy an interaction that is
+already running. A run
 that fails never rewrites `body`: the note goes back to being the capture it
 was, carrying `research_status: "failed"`. That guarantee is load-bearing for
 the merge path, where there is no second note holding the user's words.
