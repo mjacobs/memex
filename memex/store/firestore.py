@@ -138,6 +138,32 @@ def transition_operation(
     return True
 
 
+def reserve_operation_result(operation_id: str, note_id: str) -> bool:
+    """Claim the right to write this operation's result; True if we won.
+
+    `transition_operation` guards a status change, but reserving a result and
+    settling are two writes, and between them the operation is still running
+    with a status a second delivery reads as its own to advance. Conditioning
+    on result_note_id being unset makes the reservation itself exclusive, so
+    only one delivery ever writes the report.
+    """
+    ref = db().collection(COLLECTIONS[Operation]).document(operation_id)
+    snap = ref.get()
+    if not snap.exists:
+        return False
+    current = snap.to_dict() or {}
+    if current.get("status") != "running" or current.get("result_note_id") is not None:
+        return False
+    try:
+        ref.update(
+            {"result_note_id": note_id, "updated_at": now()},
+            option=db().write_option(last_update_time=snap.update_time),
+        )
+    except FailedPrecondition:
+        return False
+    return True
+
+
 def claim_note_research(note_id: str) -> bool:
     """Compare-and-set a note into research_status="running"; True if we won.
 

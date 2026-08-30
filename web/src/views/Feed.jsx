@@ -77,31 +77,35 @@ export default function Feed({ pendingCaptures, refreshToken }) {
   );
 
   // Notes carry their own research_status now, so the cards say what is
-  // pending. This poll is only the refetch trigger: any change in the running
-  // set means some note's status moved. Watching for the count to reach zero
-  // was not enough — a run started from chat takes it 0 -> 1 and its card
-  // would show nothing, and one of three runs finishing takes it 3 -> 2 with
-  // a report already in the feed.
+  // pending. This poll is only the refetch trigger: it watches *which* runs
+  // are going, not how many. A count alone missed a run started from chat
+  // (0 -> 1, card shows nothing), one of three finishing (3 -> 2, report
+  // already in the feed), and one finishing as another starts, which leaves
+  // the count untouched while two cards changed.
   const [opsSettled, setOpsSettled] = useState(0);
   const prevRunning = useRef(null);
   useEffect(() => {
     let alive = true;
     let timer = null;
     async function poll() {
-      let count = null; // null = this poll failed; refetching is best-effort
+      let running = null; // null = this poll failed; refetching is best-effort
       try {
-        count = (await api.listOperations("running")).operations.length;
+        const { operations } = await api.listOperations("running");
+        running = operations
+          .map((o) => o.id)
+          .sort()
+          .join(",");
       } catch {
         // the feed already surfaces its own errors
       }
       if (!alive) return;
-      if (count !== null) {
-        if (prevRunning.current !== null && count !== prevRunning.current) {
+      if (running !== null) {
+        if (prevRunning.current !== null && running !== prevRunning.current) {
           setOpsSettled((n) => n + 1);
         }
-        prevRunning.current = count;
+        prevRunning.current = running;
       }
-      timer = setTimeout(poll, count ? OPS_POLL_MS : OPS_IDLE_POLL_MS);
+      timer = setTimeout(poll, running ? OPS_POLL_MS : OPS_IDLE_POLL_MS);
     }
     poll();
     return () => {

@@ -1068,3 +1068,67 @@ def test_merging_keeps_the_notes_own_trace(fs, enqueued, monkeypatch):
     texts = [e.text for e in note.trace]
     assert "Edited summary" in texts, "the note's own history survived"
     assert "# Report\n\nFindings." in texts, "the report's steps were added"
+
+
+def test_two_completion_deliveries_write_one_report(fs, enqueued, monkeypatch):
+    """Cloud Tasks delivers at least once, and both deliveries can read the
+    operation as running: reserving the result has to be exclusive, or the
+    split path writes two report notes."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    before = len(store.query(Note, limit=100))
+    first = research.poll_operation(op.id)
+    # A delivery that read the operation before the first one settled.
+    second = research.poll_operation(op.id)
+
+    assert first["status"] == "completed"
+    assert second.get("deduped") is True
+    assert len(store.query(Note, limit=100)) == before + 1
+
+
+def test_a_failed_run_frees_the_note_even_if_settling_is_lost(
+    fs, enqueued, monkeypatch
+):
+    """The note is freed before the operation settles, so a crash between the
+    two cannot leave a settled run against a note that reads as busy — which
+    nothing would ever repair, blocking research on it forever."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id)
+    store.update(Note, source.id, {"research_status": "running"})
+    monkeypatch.setattr(
+        research,
+        "_get_interaction",
+        lambda iid: {"status": "failed", "errors": [{"message": "quota"}]},
+    )
+    monkeypatch.setattr(
+        store, "transition_operation", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("crash"))
+    )
+
+    with pytest.raises(RuntimeError):
+        research.poll_operation(op.id)
+
+    note = store.get(Note, source.id)
+    assert note is not None and note.research_status == "failed"
+    assert store.claim_note_research(source.id) is True
+
+
+def test_search_finds_a_merged_report_by_the_question_it_answers(fs):
+    from memex.agent import tools
+
+    note = _make_note(body="are heat pump water heaters worth it in a mild climate")
+    store.update(
+        Note,
+        note.id,
+        {
+            "kind": "research",
+            "body": "# Report\n\nUnrelated prose about efficiency ratings.",
+            "original_body": "are heat pump water heaters worth it in a mild climate",
+            "research_status": "completed",
+        },
+    )
+
+    hits = tools.search_notes("mild climate")["notes"]
+
+    assert [n["id"] for n in hits] == [note.id]
