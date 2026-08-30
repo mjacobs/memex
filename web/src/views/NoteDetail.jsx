@@ -182,15 +182,9 @@ export default function NoteDetail({ id }) {
   // While a run is in flight, re-read the note until it settles. Without
   // this the page keeps saying "report pending" long after the report landed,
   // because nothing else on this route ever refetches.
-  //
-  // Never while an edit is open: the draft was seeded from the note as it was
-  // before the report landed, and PATCH sends whole fields — so saving after
-  // a poll swapped the note underneath would write the old body back over the
-  // report. The edit is the user's; it waits rather than racing.
   const running = note?.research_status === "running";
-  const drafting = draft !== null;
   useEffect(() => {
-    if (!running || drafting) return undefined;
+    if (!running) return undefined;
     let alive = true;
     let timer = null;
     const tick = async () => {
@@ -210,7 +204,7 @@ export default function NoteDetail({ id }) {
       alive = false;
       clearTimeout(timer);
     };
-  }, [id, running, drafting]);
+  }, [id, running]);
 
   function startEdit() {
     setConfirmingDelete(false);
@@ -285,13 +279,9 @@ export default function NoteDetail({ id }) {
             </div>
             {!editing && !confirmingDelete && (
               <div className="row note-actions">
-                {/* A run in flight may rewrite this note into its report at
-                    any moment. PATCH sends whole fields, so an edit started
-                    before that lands would save over the report — and the
-                    report cost money. The edit waits; nothing is lost. */}
-                <button onClick={startEdit} disabled={note.research_status === "running"}>
-                  edit
-                </button>
+                {/* Editable during a research run: the report arrives as its
+                    own note, so there is nothing here for it to overwrite. */}
+                <button onClick={startEdit}>edit</button>
                 <button className="danger" onClick={() => setConfirmingDelete(true)}>
                   delete
                 </button>
