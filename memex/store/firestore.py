@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 
-from google.api_core.exceptions import FailedPrecondition
+from google.api_core.exceptions import AlreadyExists, FailedPrecondition
 from google.cloud import firestore
 from pydantic import BaseModel
 
@@ -54,6 +54,25 @@ def now() -> datetime:
 def put(entity: BaseModel) -> None:
     coll = COLLECTIONS[type(entity)]
     db().collection(coll).document(entity.id).set(entity.model_dump(mode="python"))
+
+
+def create(entity: BaseModel) -> bool:
+    """Write a doc only if its id is still free; False when it is taken.
+
+    `put` is an unconditional set, which is what a caller minting a fresh id
+    wants. It is the wrong write for an id agreed on in advance — a report
+    note's id is reserved on its operation before the note exists, and an
+    at-least-once redelivery replays that write, so `put` would overwrite
+    whatever the document has become since.
+    """
+    coll = COLLECTIONS[type(entity)]
+    try:
+        db().collection(coll).document(entity.id).create(
+            entity.model_dump(mode="python")
+        )
+    except AlreadyExists:
+        return False
+    return True
 
 
 def get[M: BaseModel](model: type[M], doc_id: str) -> M | None:

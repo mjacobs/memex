@@ -435,6 +435,38 @@ def test_poll_replays_onto_the_reserved_report_note(fs, enqueued, monkeypatch):
     assert [n.id for n in reports] == [reserved]
 
 
+def test_a_redelivered_completion_does_not_overwrite_an_edited_report(
+    fs, enqueued, monkeypatch
+):
+    """A report is a note like any other once it lands: the user can edit it.
+
+    The delivery that wrote it can die before settling the operation, and the
+    redelivery replays onto the same reserved id — as a create, so it finds
+    the report already there and leaves the user's version alone.
+    """
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    first = research.poll_operation(op.id)
+    report_id = first["result_note_id"]
+    store.update(Note, report_id, {"body": "# Report\n\nFindings. Checked this one."})
+
+    # The winning delivery died before settling: the operation is still
+    # running with the report's id reserved, so the poll comes back.
+    store.update_operation(op.id, {"status": "running"})
+    again = research.poll_operation(op.id)
+
+    assert again["result_note_id"] == report_id
+    report = store.get(Note, report_id)
+    assert report is not None
+    assert report.body == "# Report\n\nFindings. Checked this one."
+    # And the run still finishes rather than wedging on the note it found.
+    assert store.get(Operation, op.id).status == "completed"
+    reports = [n for n in store.query(Note, limit=100) if n.kind == "research"]
+    assert [n.id for n in reports] == [report_id]
+
+
 def test_poll_unknown_operation_errors(fs):
     out = research.poll_operation(new_ulid())
     assert "not found" in out["error"]

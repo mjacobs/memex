@@ -454,8 +454,10 @@ def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note
     """Write the `research` note the completed interaction produced.
 
     `note_id` is reserved on the operation before this runs, so a retry after
-    a crash mid-completion rewrites the same document instead of adding a
-    second report to the feed.
+    a crash mid-completion lands on the same document instead of adding a
+    second report to the feed — and lands as a create, so a redelivery that
+    finds the report already published leaves it alone. Overwriting it would
+    throw away whatever the user has done to the report since it arrived.
     """
     steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
     report = _report_from_steps(steps)
@@ -477,7 +479,11 @@ def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note
         tags=tags,
         trace=_trace_from_steps(steps),
     )
-    store.put(note)
+    if not store.create(note):
+        logger.info(
+            "report note %s is already written; leaving it as it stands", note_id
+        )
+        return store.get(Note, note_id) or note
     return note
 
 

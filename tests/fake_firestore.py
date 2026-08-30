@@ -1,7 +1,7 @@
 """In-memory stand-in for google.cloud.firestore.Client.
 
 Implements just the surface memex.store.firestore uses: collection ->
-document(set/get/update) and collection -> where/order_by/start_after/
+document(set/create/get/update) and collection -> where/order_by/start_after/
 limit/stream, plus write_option(last_update_time=...) preconditions (the
 operations CAS). Used when FIRESTORE_EMULATOR_HOST is unset.
 """
@@ -9,7 +9,7 @@ operations CAS). Used when FIRESTORE_EMULATOR_HOST is unset.
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
-from google.api_core.exceptions import FailedPrecondition, NotFound
+from google.api_core.exceptions import AlreadyExists, FailedPrecondition, NotFound
 from google.cloud.firestore_v1.transforms import ArrayUnion
 
 
@@ -38,6 +38,13 @@ class FakeDocument:
     def set(self, data: dict) -> None:
         self._collection.docs[self._id] = deepcopy(data)
         self._collection.touch(self._id)
+
+    def create(self, data: dict) -> None:
+        if self._id in self._collection.docs:
+            # What the real client raises when the id is taken, so a caller
+            # can tell "someone wrote this already" from a transient failure.
+            raise AlreadyExists(f"document {self._id} already exists")
+        self.set(data)
 
     def get(self) -> FakeSnapshot:
         data = self._collection.docs.get(self._id)
