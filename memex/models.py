@@ -20,6 +20,9 @@ RoutineName = Literal["daily_review", "nightly_digest"]
 RoutineStatus = Literal["running", "succeeded", "failed"]
 OperationKind = Literal["deep_research"]
 OperationStatus = Literal["running", "completed", "failed"]
+# Mirrors the operation's status onto the note it is about, so a feed card can
+# say a report is coming without cross-referencing the operations queue.
+ResearchStatus = Literal["running", "completed", "failed"]
 
 
 _TAG_SPLIT = re.compile(r",+")
@@ -107,8 +110,17 @@ class Note(_Tagged):
     summary: str
     tags: list[str] = Field(default_factory=list)
     task_ids: list[str] = Field(default_factory=list)
-    # kind=research: the note that asked for the research.
+    # kind=research: the note that asked for the research. None when the note
+    # is its own source — a capture that asked for research as it was written
+    # becomes the report rather than spawning a second note.
     source_note_id: str | None = None
+    # Set on any note with a run against it, whichever note ends up holding
+    # the report. None means nobody ever asked.
+    research_status: ResearchStatus | None = None
+    # kind=research, merged notes only: what the note said before the report
+    # replaced it. A failed run leaves `body` alone, so this is only ever set
+    # alongside research_status="completed".
+    original_body: str | None = None
     trace: list[TraceEvent] = Field(default_factory=list)
 
 
@@ -171,6 +183,11 @@ class Operation(BaseModel):
     interaction_id: str
     source_note_id: str
     result_note_id: str | None = None
+    # True when completion should rewrite source_note_id in place instead of
+    # writing a second note: the capture asked for research as it was written,
+    # so one note is the question and the answer. A run started later against
+    # a note that already stands on its own leaves it alone.
+    merge_into_source: bool = False
     attempts: int = 0
     error: str | None = None
 

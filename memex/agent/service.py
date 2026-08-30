@@ -282,6 +282,11 @@ def enrich_capture(capture_id: str) -> dict:
         # fails the capture, but the outcome rides back in the result so a
         # kickoff that failed is visible to the caller and not only to the log.
         research = start_requested_research(note) if capture.research else None
+        if research is not None and not research.get("error"):
+            # The kickoff stamped research_status onto the stored note; re-read
+            # so the response says a report is coming rather than describing
+            # the note as it was a moment before.
+            note = store.get(Note, note.id) or note
         tasks_out = [t for tid in task_ids if (t := store.get(Task, tid)) is not None]
         result_out = {
             "capture": capture.model_dump(mode="json"),
