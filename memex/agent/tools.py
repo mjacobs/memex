@@ -278,8 +278,7 @@ def search_notes(query: str, limit: int = 20) -> dict:
 
     Naive on purpose (single-user scale, contracts.md): pulls recent notes
     and filters server-side — a query term matches a note when it appears in
-    the body, summary, transcript, or the question a merged report answers
-    (case-insensitive) or equals a tag.
+    the body, summary, or transcript (case-insensitive) or equals a tag.
     """
     needle = query.strip().lower()
     if not needle:
@@ -291,10 +290,6 @@ def search_notes(query: str, limit: int = 20) -> dict:
         if needle in (n.body or "").lower()
         or needle in (n.summary or "").lower()
         or needle in (n.transcript or "").lower()
-        # A merged report replaced `body`, so the words the user actually
-        # typed live here. Searching without it loses the note to the very
-        # phrasing it was captured with.
-        or needle in (n.original_body or "").lower()
         or needle in n.tags
     ]
     return {

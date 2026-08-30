@@ -119,10 +119,6 @@ class Note(_Tagged):
     # already been superseded must not clear a newer run's claim, or the note
     # reads as free and a second interaction can be bought.
     research_operation_id: str | None = None
-    # kind=research, merged notes only: what the note said before the report
-    # replaced it. A failed run leaves `body` alone, so this is only ever set
-    # alongside research_status="completed".
-    original_body: str | None = None
     trace: list[TraceEvent] = Field(default_factory=list)
 
 
