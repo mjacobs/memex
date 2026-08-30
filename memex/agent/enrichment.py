@@ -187,12 +187,8 @@ def enrich_link(url: str, title: str | None, note: str | None) -> EnrichmentResu
     return EnrichmentResult.model_validate_json(response.text)
 
 
-def start_requested_research(note: Note) -> dict:
+def start_requested_research(note: Note, merge_into_source: bool = False) -> dict:
     """Kick off the deep-research run the capture explicitly asked for.
-
-    Started with `merge_into_source`: this note exists because the user typed
-    a question and asked for research on it, so the report belongs in this
-    note rather than in a second one that repeats it.
 
     Called only when `capture.research` is set — the enrichment model's tags
     never reach this (docs/contracts.md). Failure to *start* must never fail
@@ -206,7 +202,9 @@ def start_requested_research(note: Note) -> dict:
     from memex.agent.research import start_research_operation
 
     try:
-        result = start_research_operation(note.id, merge_into_source=True)
+        result = start_research_operation(
+            note.id, merge_into_source=merge_into_source
+        )
     except Exception as exc:  # start_research_operation shouldn't raise, but even so
         logger.exception("failed to start research for note %s", note.id)
         return {"error": str(exc)}
