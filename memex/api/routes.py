@@ -511,6 +511,33 @@ def patch_note(note_id: str, body: NotePatch) -> dict:
     return {"note": dump(updated)}
 
 
+@router.post("/notes/{note_id}/research", status_code=202)
+def start_note_research(note_id: str) -> dict:
+    """Research a note that already exists.
+
+    The other half of the capture's `research` flag: same rule, same reason —
+    a run spends real money and ships the note to an external service, so it
+    starts because the owner asked, never because of anything read out of a
+    page (contracts.md).
+
+    This path never merges. The note stands on its own already, so the report
+    lands as its own `research` note pointing back here.
+    """
+    note = store.get(Note, note_id)
+    if note is None:
+        raise ApiError(404, "not_found", f"note {note_id} not found")
+    if note.research_status == "running":
+        raise ApiError(
+            409, "already_running", f"note {note_id} already has a research run"
+        )
+    from memex.agent.research import start_research_operation
+
+    result = start_research_operation(note_id)
+    if result.get("error"):
+        raise ApiError(502, "research_failed", result["error"])
+    return {"operation_id": result["operation_id"], "status": "running"}
+
+
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: str) -> dict:
     """Hard-delete the note and its originating capture, blob included — for

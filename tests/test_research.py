@@ -872,3 +872,64 @@ def test_research_on_an_existing_note_still_writes_a_second_note(
     assert kept.kind == "capture" and kept.body == "https://example.com/wal-mode"
     # It is not the report, but it should stop saying one is coming.
     assert kept.research_status == "completed"
+
+
+# --- POST /notes/{id}/research ---------------------------------------------
+
+
+def test_note_research_route_starts_a_run(fs, client, monkeypatch):
+    note = _make_note()
+    calls: list[tuple[str, bool]] = []
+
+    def starter(note_id: str, merge_into_source: bool = False) -> dict:
+        calls.append((note_id, merge_into_source))
+        store.update(Note, note_id, {"research_status": "running"})
+        return {"operation_id": "op-77"}
+
+    monkeypatch.setattr(research, "start_research_operation", starter)
+
+    r = client.post(f"/api/v1/notes/{note.id}/research", headers=AUTH)
+
+    assert r.status_code == 202
+    assert r.json() == {"operation_id": "op-77", "status": "running"}
+    # An existing note keeps its identity: this path never merges.
+    assert calls == [(note.id, False)]
+
+
+def test_note_research_route_refuses_a_second_concurrent_run(fs, client, monkeypatch):
+    note = _make_note()
+    store.update(Note, note.id, {"research_status": "running"})
+    monkeypatch.setattr(
+        research,
+        "start_research_operation",
+        lambda note_id, merge_into_source=False: pytest.fail("should not start"),
+    )
+
+    r = client.post(f"/api/v1/notes/{note.id}/research", headers=AUTH)
+
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "already_running"
+
+
+def test_note_research_route_404s_for_an_unknown_note(fs, client):
+    r = client.post(f"/api/v1/notes/{new_ulid()}/research", headers=AUTH)
+    assert r.status_code == 404
+
+
+def test_note_research_route_needs_the_device_key(fs, client):
+    note = _make_note()
+    assert client.post(f"/api/v1/notes/{note.id}/research").status_code == 401
+
+
+def test_note_research_route_reports_a_kickoff_that_failed(fs, client, monkeypatch):
+    note = _make_note()
+    monkeypatch.setattr(
+        research,
+        "start_research_operation",
+        lambda note_id, merge_into_source=False: {"error": "no quota"},
+    )
+
+    r = client.post(f"/api/v1/notes/{note.id}/research", headers=AUTH)
+
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "research_failed"
