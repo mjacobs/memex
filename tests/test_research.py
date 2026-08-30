@@ -1039,7 +1039,7 @@ def test_a_kickoff_that_dies_hands_the_note_back(fs, enqueued, monkeypatch):
     refreshed = store.get(Note, note.id)
     assert refreshed is not None and refreshed.research_status is None
     # And the note can be researched again once the outage passes.
-    assert store.claim_note_research(note.id) is True
+    assert store.claim_note_research(note.id, new_ulid()) is True
 
 
 def test_merging_keeps_the_notes_own_trace(fs, enqueued, monkeypatch):
@@ -1103,7 +1103,9 @@ def test_a_failed_run_frees_the_note_even_if_settling_is_lost(
         lambda iid: {"status": "failed", "errors": [{"message": "quota"}]},
     )
     monkeypatch.setattr(
-        store, "transition_operation", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("crash"))
+        store,
+        "transition_operation",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
     )
 
     with pytest.raises(RuntimeError):
@@ -1111,7 +1113,7 @@ def test_a_failed_run_frees_the_note_even_if_settling_is_lost(
 
     note = store.get(Note, source.id)
     assert note is not None and note.research_status == "failed"
-    assert store.claim_note_research(source.id) is True
+    assert store.claim_note_research(source.id, new_ulid()) is True
 
 
 def test_search_finds_a_merged_report_by_the_question_it_answers(fs):
@@ -1154,7 +1156,7 @@ def test_a_lost_operation_write_does_not_free_the_note_to_buy_another(
     assert "error" in out
     refreshed = store.get(Note, note.id)
     assert refreshed is not None and refreshed.research_status == "running"
-    assert store.claim_note_research(note.id) is False
+    assert store.claim_note_research(note.id, new_ulid()) is False
 
 
 def test_a_merge_that_failed_after_reserving_can_resume(fs, enqueued, monkeypatch):
@@ -1197,7 +1199,9 @@ def test_a_transient_note_failure_does_not_settle_the_operation(
         lambda iid: {"status": "failed", "errors": [{"message": "quota"}]},
     )
     monkeypatch.setattr(
-        store, "update", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("transient"))
+        store,
+        "settle_note_research",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("transient")),
     )
 
     with pytest.raises(RuntimeError):
@@ -1218,3 +1222,46 @@ def test_a_deleted_note_does_not_wedge_its_operation(fs, enqueued, monkeypatch):
 
     assert out["status"] == "completed"
     assert store.get(Operation, op.id).status == "completed"
+
+
+def test_a_superseded_runs_late_write_cannot_free_the_note(fs, enqueued, monkeypatch):
+    """Two deliveries of one poll can both pass the operation's status check.
+
+    If the slow one lands after the user started a *second* run, clearing the
+    note would make it read as free and the next tap would buy an interaction
+    that is already running.
+    """
+    note = _make_note()
+    old_op = _make_operation(source_note_id=note.id)
+    # The first run claimed and settled; a second run now owns the note.
+    store.claim_note_research(note.id, old_op.id)
+    new_op_id = new_ulid()
+    store.settle_note_research(note.id, old_op.id, None)
+    assert store.claim_note_research(note.id, new_op_id) is True
+
+    # The stale delivery from the first run arrives now.
+    assert store.settle_note_research(note.id, old_op.id, "failed") is False
+
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None
+    assert refreshed.research_status == "running"
+    assert refreshed.research_operation_id == new_op_id
+    # And the note is still busy, so nothing can buy a duplicate.
+    assert store.claim_note_research(note.id, new_ulid()) is False
+
+
+def test_a_merge_from_a_superseded_run_does_not_rewrite_the_note(
+    fs, enqueued, monkeypatch
+):
+    note = _make_note(body="the original question")
+    old_op = _make_operation(source_note_id=note.id, merge_into_source=True)
+    store.claim_note_research(note.id, new_ulid())  # a newer run owns it
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    out = research.poll_operation(old_op.id)
+
+    assert out["status"] == "failed"
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None
+    assert refreshed.body == "the original question", "not rewritten by the old run"
+    assert refreshed.kind == "capture"

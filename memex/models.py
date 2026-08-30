@@ -117,6 +117,10 @@ class Note(_Tagged):
     # Set on any note with a run against it, whichever note ends up holding
     # the report. None means nobody ever asked.
     research_status: ResearchStatus | None = None
+    # Which operation owns that status. A late write from a run that has
+    # already been superseded must not clear a newer run's claim, or the note
+    # reads as free and a second interaction can be bought.
+    research_operation_id: str | None = None
     # kind=research, merged notes only: what the note said before the report
     # replaced it. A failed run leaves `body` alone, so this is only ever set
     # alongside research_status="completed".

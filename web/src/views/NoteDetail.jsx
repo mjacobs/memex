@@ -285,7 +285,13 @@ export default function NoteDetail({ id }) {
             </div>
             {!editing && !confirmingDelete && (
               <div className="row note-actions">
-                <button onClick={startEdit}>edit</button>
+                {/* A run in flight may rewrite this note into its report at
+                    any moment. PATCH sends whole fields, so an edit started
+                    before that lands would save over the report — and the
+                    report cost money. The edit waits; nothing is lost. */}
+                <button onClick={startEdit} disabled={note.research_status === "running"}>
+                  edit
+                </button>
                 <button className="danger" onClick={() => setConfirmingDelete(true)}>
                   delete
                 </button>

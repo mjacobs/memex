@@ -164,13 +164,16 @@ def reserve_operation_result(operation_id: str, note_id: str) -> bool:
     return True
 
 
-def claim_note_research(note_id: str) -> bool:
+def claim_note_research(note_id: str, operation_id: str) -> bool:
     """Compare-and-set a note into research_status="running"; True if we won.
 
     The 409 on POST /notes/{id}/research is a read followed by a start, and a
     double tap can slip between them — two interactions, two bills. Claiming
     the note first with a last_update_time precondition makes exactly one
     caller the winner, and the loser never creates an interaction at all.
+
+    The claim records which operation holds it, so a late write from a run
+    that has since been superseded cannot clear it (see settle_note_research).
     """
     ref = db().collection(COLLECTIONS[Note]).document(note_id)
     snap = ref.get()
@@ -178,7 +181,7 @@ def claim_note_research(note_id: str) -> bool:
         return False
     try:
         ref.update(
-            {"research_status": "running"},
+            {"research_status": "running", "research_operation_id": operation_id},
             option=db().write_option(last_update_time=snap.update_time),
         )
     except FailedPrecondition:
@@ -186,14 +189,43 @@ def claim_note_research(note_id: str) -> bool:
     return True
 
 
-def release_note_research(note_id: str, status: str | None) -> None:
-    """Undo a claim whose run never got off the ground. Best effort: the
-    caller is already returning an error, and a note deleted in the meantime
-    is not a second failure worth raising."""
+def settle_note_research(
+    note_id: str, operation_id: str, status: str | None, extra: dict | None = None
+) -> bool:
+    """Write a terminal research status, but only for the run that owns it.
+
+    Two deliveries of one poll can both pass the operation's status check, and
+    the slower one can land after the user has started a *second* run. Without
+    this guard that stale write clears the new run's claim, the note reads as
+    free, and the next tap buys an interaction that is already running.
+
+    Returns False when the note is gone or another run owns it — neither is an
+    error, both mean this write has nothing to say. Any other failure raises,
+    because silently dropping it would strand the note as running.
+    """
+    ref = db().collection(COLLECTIONS[Note]).document(note_id)
+    snap = ref.get()
+    if not snap.exists:
+        return False
+    current = snap.to_dict() or {}
+    if current.get("research_operation_id") not in (operation_id, None):
+        logger.info(
+            "note %s is owned by run %s; not settling it for %s",
+            note_id,
+            current.get("research_operation_id"),
+            operation_id,
+        )
+        return False
     try:
-        update(Note, note_id, {"research_status": status})
-    except Exception:
-        logger.exception("could not release the research claim on note %s", note_id)
+        ref.update(
+            {"research_status": status, **(extra or {})},
+            option=db().write_option(last_update_time=snap.update_time),
+        )
+    except FailedPrecondition:
+        # Someone else wrote between the read and here; theirs is the newer
+        # word on this note.
+        return False
+    return True
 
 
 def list_chat_sessions(limit: int = 20) -> list[ChatSession]:

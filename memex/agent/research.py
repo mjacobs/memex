@@ -42,7 +42,6 @@ from datetime import timedelta
 import google.auth
 import google.auth.transport.requests
 import httpx
-from google.api_core.exceptions import NotFound
 
 from memex.config import settings
 from memex.ids import new_ulid
@@ -250,12 +249,14 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
     note = store.get(Note, note_id)
     if note is None:
         return {"error": f"note {note_id} not found"}
-    previous_status = note.research_status
+    # The id is minted before the claim so the note can record which run owns
+    # it, and a superseded run's late write cannot clear a newer claim.
+    operation_id = new_ulid()
     # Claim the note before spending anything. Two callers racing here — a
     # double tap, or two devices — would otherwise both read "not running"
     # and both create a paid interaction; the loser stops before it costs
     # money rather than after.
-    if not store.claim_note_research(note_id):
+    if not store.claim_note_research(note_id, operation_id):
         return {
             "error": f"note {note_id} already has a research run",
             "code": "already_running",
@@ -267,11 +268,11 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         # Nothing was created and nothing was spent, so hand the note back the
         # way it was — otherwise a note that never started a run reads as busy
         # forever and can never be researched again.
-        store.release_note_research(note_id, previous_status)
+        store.settle_note_research(note_id, operation_id, note.research_status)
         return {"error": str(exc)}
     try:
         op = Operation(
-            id=new_ulid(),
+            id=operation_id,
             kind="deep_research",
             created_at=store.now(),
             updated_at=store.now(),
@@ -299,10 +300,13 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         # The interaction is running server-side but nothing will ever poll
         # it; fail the operation so the queue doesn't show it running forever.
         logger.exception("failed to enqueue first poll for operation %s", op.id)
+        # The note is freed before the operation settles, as in poll_operation:
+        # settling first and dying in between would strand it as running with
+        # nothing left to reconcile it.
+        _mark_note_failed(note_id, op.id)
         store.update_operation(
             op.id, {"status": "failed", "error": f"enqueue failed: {exc}"}
         )
-        _mark_note_failed(note_id)
         return {"error": f"enqueue failed: {exc}"}
     return {"operation_id": op.id}
 
@@ -394,7 +398,6 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
         if not note.summary.startswith("Research report:")
         else note.summary,
         "tags": [RESEARCH_REPORT_TAG, *tags],
-        "research_status": "completed",
         # Appended, never replaced: the note already carries how it became a
         # note, plus a user event for every owner edit. The trace is the
         # honesty surface, and overwriting it here would erase the note's own
@@ -405,7 +408,11 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
             [e.model_dump(mode="python") for e in _trace_from_steps(steps)]
         ),
     }
-    store.update(Note, note.id, changes)
+    # Ownership-guarded like every other terminal write: a merge belonging to
+    # a superseded run must not rewrite a note a newer run has claimed.
+    if not store.settle_note_research(note.id, op.id, "completed", extra=changes):
+        logger.info("note %s is no longer owned by run %s; not merged", note.id, op.id)
+        return None
     return store.get(Note, note.id)
 
 
@@ -440,20 +447,16 @@ def _write_research_note(op: Operation, interaction: dict, note_id: str) -> Note
     return note
 
 
-def _mark_note_failed(note_id: str) -> None:
+def _mark_note_failed(note_id: str, operation_id: str) -> None:
     """Tell the asking note its run died.
 
     A failed run never rewrites `body`, so whatever the user wrote is still
     there — the note goes back to being what it was, carrying a status the UI
     can show instead of leaving a card that says a report is coming forever.
-    A note deleted mid-run is not an error worth raising. Anything else is:
-    swallowing a transient failure would settle the operation against a note
-    still reading as running, which nothing would ever repair.
+    Only for the run that owns the note: a note deleted mid-run, or one a
+    newer run has already claimed, has nothing to hear from this one.
     """
-    try:
-        store.update(Note, note_id, {"research_status": "failed"})
-    except NotFound:
-        logger.info("note %s is gone; nothing to mark research-failed", note_id)
+    store.settle_note_research(note_id, operation_id, "failed")
 
 
 def _deduped(op: Operation) -> dict:
@@ -496,7 +499,7 @@ def poll_operation(operation_id: str) -> dict:
             # is running — and a redelivery dedupes on the settled operation
             # and never repairs it, so the note could never be researched
             # again. This order can only repeat a harmless write.
-            _mark_note_failed(op.source_note_id)
+            _mark_note_failed(op.source_note_id, op.id)
             if not store.transition_operation(
                 op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
             ):
@@ -523,7 +526,10 @@ def poll_operation(operation_id: str) -> dict:
                 return _deduped(op)
             note = _merge_research_into_source(op, interaction)
             if note is None:
-                error = f"merge target note {op.source_note_id} is gone"
+                error = (
+                    f"note {op.source_note_id} could not be merged: it is gone, "
+                    "or a newer run owns it"
+                )
                 store.update_operation(
                     op.id, {"status": "failed", "attempts": attempts, "error": error}
                 )
@@ -540,16 +546,11 @@ def poll_operation(operation_id: str) -> dict:
                 return _deduped(op)
             note = _write_research_note(op, interaction, note_id)
             # The asking note stops saying a report is coming; the report
-            # itself is the other note. A note deleted mid-run is fine — the
-            # report stands on its own. A transient failure is not: it would
-            # settle the operation against a note stuck reading as running,
-            # so it propagates and the poll retries.
-            try:
-                store.update(Note, op.source_note_id, {"research_status": "completed"})
-            except NotFound:
-                logger.info(
-                    "note %s is gone; its report stands alone", op.source_note_id
-                )
+            # itself is the other note. A note deleted mid-run, or one a newer
+            # run already owns, has nothing to hear from this one — but a
+            # transient failure still raises, so the poll comes back rather
+            # than settling against a note stuck reading as running.
+            store.settle_note_research(op.source_note_id, op.id, "completed")
         store.update_operation(
             op.id,
             {"status": "completed", "attempts": attempts, "result_note_id": note.id},
@@ -562,7 +563,7 @@ def poll_operation(operation_id: str) -> dict:
     error = _interaction_error(interaction)
     # Same order as the give-up path above: the note is freed before the
     # operation settles, so a crash between them cannot strand it.
-    _mark_note_failed(op.source_note_id)
+    _mark_note_failed(op.source_note_id, op.id)
     if not store.transition_operation(
         op.id, "running", {"status": "failed", "attempts": attempts, "error": error}
     ):
