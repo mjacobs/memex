@@ -7,6 +7,7 @@ import {
   Loading,
   Markdown,
   PlainText,
+  ResearchStatus,
   Tags,
   Trace,
 } from "../components.jsx";
@@ -49,6 +50,50 @@ function LinkedTasks({ taskIds }) {
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+/** "Research this", for a note you are looking at rather than one you are
+ *  still typing. Starting a run costs real money and takes minutes to hours,
+ *  so the button says so rather than making you find out. */
+function ResearchAction({ note, onStarted, onError }) {
+  const [starting, setStarting] = useState(false);
+
+  // A report is not researched again; it is the research.
+  if (note.kind === "research") return null;
+  if (note.research_status === "running") {
+    return (
+      <div className="section">
+        <h3>Research</h3>
+        <ResearchStatus status="running" />
+      </div>
+    );
+  }
+
+  const start = async () => {
+    setStarting(true);
+    try {
+      await api.researchNote(note.id);
+      onStarted();
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <div className="section">
+      <h3>Research</h3>
+      <button className="btn" disabled={starting} onClick={start}>
+        {starting ? "starting…" : "Research this"}
+      </button>
+      <p className="note-hint">
+        Runs in the background — minutes to hours, and it costs money. The
+        report arrives as its own note in your feed.
+      </p>
+      {note.research_status === "failed" && <ResearchStatus status="failed" />}
     </div>
   );
 }
@@ -309,6 +354,14 @@ export default function NoteDetail({ id }) {
               </button>
             </div>
           )}
+
+          <ResearchAction
+            note={note}
+            onStarted={() =>
+              setNote((n) => (n ? { ...n, research_status: "running" } : n))
+            }
+            onError={setError}
+          />
 
           <LinkedTasks taskIds={note.task_ids} />
           <Trace trace={note.trace} />
