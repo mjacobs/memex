@@ -246,8 +246,10 @@ running operations (kata `wz2g`).
   one the user has since edited — but deletion frees the id, and a create
   cannot tell "never written" from "deleted", so a report deleted between
   the note write and the operation settling is recreated by the redelivery.
-  The window is the seconds between those two writes, and the cost is a
-  resurrected report to delete again — accepted (Matt, 2026-08-30). Closing
+  The window lasts until the operation settles — normally the seconds
+  between those two writes, longer if the settle keeps failing and a
+  redelivery is what finishes it. The cost is a resurrected report to
+  delete again — accepted (Matt, 2026-08-30). Closing
   it needs a durable published marker on the operation, distinct from
   `result_note_id`, which is reserved before the note exists.
 
