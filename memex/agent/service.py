@@ -281,18 +281,9 @@ def enrich_capture(capture_id: str) -> dict:
         # reading of page text never authorizes one (contracts.md). Never
         # fails the capture, but the outcome rides back in the result so a
         # kickoff that failed is visible to the caller and not only to the log.
-        # Merge only where the note is the question. A typed thought or a
-        # spoken one exists to ask something, so the report belongs in it. A
-        # saved link or a screenshot is a thing in its own right — Tabby
-        # stashes pages to read later, and consuming one into a report would
-        # take away the page you meant to keep.
-        research = (
-            start_requested_research(
-                note, merge_into_source=capture.kind in ("text", "audio")
-            )
-            if capture.research
-            else None
-        )
+        # The report lands as its own note whatever the capture was, so the
+        # capture note here is finished either way and the run only adds to it.
+        research = start_requested_research(note) if capture.research else None
         if research is not None and not research.get("error"):
             # The kickoff stamped research_status onto the stored note; re-read
             # so the response says a report is coming rather than describing

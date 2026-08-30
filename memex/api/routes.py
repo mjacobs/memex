@@ -532,8 +532,8 @@ def start_note_research(note_id: str) -> dict:
     starts because the owner asked, never because of anything read out of a
     page (contracts.md).
 
-    This path never merges. The note stands on its own already, so the report
-    lands as its own `research` note pointing back here.
+    The note is left alone: the report lands as its own `research` note
+    pointing back here.
     """
     if store.get(Note, note_id) is None:
         raise ApiError(404, "not_found", f"note {note_id} not found")
