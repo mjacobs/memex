@@ -398,16 +398,6 @@ export default function NoteDetail({ id }) {
             </div>
           )}
 
-          {/* The report replaced the body; what the user actually wrote is
-              the thing this system exists to keep, so show it rather than
-              leaving it readable only through the API. */}
-          {note.original_body && (
-            <div className="section">
-              <h3>What you asked</h3>
-              <PlainText text={note.original_body} />
-            </div>
-          )}
-
           <ResearchAction
             note={note}
             onStarted={() =>

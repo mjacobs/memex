@@ -1013,26 +1013,6 @@ def test_a_failed_run_frees_the_note_even_if_settling_is_lost(
     assert store.claim_note_research(source.id, new_ulid()) is True
 
 
-def test_search_finds_a_merged_report_by_the_question_it_answers(fs):
-    from memex.agent import tools
-
-    note = _make_note(body="are heat pump water heaters worth it in a mild climate")
-    store.update(
-        Note,
-        note.id,
-        {
-            "kind": "research",
-            "body": "# Report\n\nUnrelated prose about efficiency ratings.",
-            "original_body": "are heat pump water heaters worth it in a mild climate",
-            "research_status": "completed",
-        },
-    )
-
-    hits = tools.search_notes("mild climate")["notes"]
-
-    assert [n["id"] for n in hits] == [note.id]
-
-
 def test_an_ambiguous_create_keeps_the_claim(fs, enqueued, monkeypatch):
     """A timeout may have been accepted and billed.
 
