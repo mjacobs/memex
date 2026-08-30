@@ -28,6 +28,9 @@ from memex.models import (
 
 logger = logging.getLogger(__name__)
 
+# Retries for one contended terminal note write (see settle_note_research).
+_SETTLE_ATTEMPTS = 3
+
 COLLECTIONS: dict[type[BaseModel], str] = {
     Capture: "captures",
     Note: "notes",
@@ -204,28 +207,38 @@ def settle_note_research(
     because silently dropping it would strand the note as running.
     """
     ref = db().collection(COLLECTIONS[Note]).document(note_id)
-    snap = ref.get()
-    if not snap.exists:
-        return False
-    current = snap.to_dict() or {}
-    if current.get("research_operation_id") not in (operation_id, None):
-        logger.info(
-            "note %s is owned by run %s; not settling it for %s",
-            note_id,
-            current.get("research_operation_id"),
-            operation_id,
-        )
-        return False
-    try:
-        ref.update(
-            {"research_status": status, **(extra or {})},
-            option=db().write_option(last_update_time=snap.update_time),
-        )
-    except FailedPrecondition:
-        # Someone else wrote between the read and here; theirs is the newer
-        # word on this note.
-        return False
-    return True
+    # A concurrent write to the note is contention, not supersession. Losing
+    # the precondition to an unrelated edit and reporting "not mine" would
+    # leave the note running with the operation already settled, which nothing
+    # reconciles — so re-read and try again, and only give up when the note is
+    # gone or another run genuinely owns it.
+    for _ in range(_SETTLE_ATTEMPTS):
+        snap = ref.get()
+        if not snap.exists:
+            return False
+        current = snap.to_dict() or {}
+        owner = current.get("research_operation_id")
+        if owner not in (operation_id, None):
+            logger.info(
+                "note %s is owned by run %s; not settling it for %s",
+                note_id,
+                owner,
+                operation_id,
+            )
+            return False
+        try:
+            ref.update(
+                {"research_status": status, **(extra or {})},
+                option=db().write_option(last_update_time=snap.update_time),
+            )
+        except FailedPrecondition:
+            continue
+        return True
+    # Out of attempts under sustained contention. Raising is deliberate: the
+    # caller must not settle its operation against a note it failed to write.
+    raise FailedPrecondition(
+        f"note {note_id} kept changing while run {operation_id} tried to settle it"
+    )
 
 
 def list_chat_sessions(limit: int = 20) -> list[ChatSession]:
