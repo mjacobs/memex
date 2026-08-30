@@ -51,6 +51,26 @@ export function Markdown({ text }) {
   return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+/** A note's own research state. Renders nothing unless a run touched it. */
+export function ResearchStatus({ status }) {
+  if (status === "running") {
+    return (
+      <p className="note-research-status running">
+        <span className="spinner" /> report pending
+      </p>
+    );
+  }
+  if (status === "failed") {
+    // The report is gone; what the user wrote never left.
+    return (
+      <p className="note-research-status failed">
+        research failed — what you wrote is still here
+      </p>
+    );
+  }
+  return null;
+}
+
 export function Badge({ value }) {
   if (!value) return null;
   return <span className={`badge ${value}`}>{value}</span>;

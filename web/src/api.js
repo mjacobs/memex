@@ -107,6 +107,9 @@ export const api = {
   patchNote: (id, changes) =>
     request(`/api/v1/notes/${id}`, { method: "PATCH", body: changes }),
   deleteNote: (id) => request(`/api/v1/notes/${id}`, { method: "DELETE" }),
+  // Research a note that already exists. The capture flag above is the other
+  // half: same rule, same reason — only the owner starts a run.
+  researchNote: (id) => request(`/api/v1/notes/${id}/research`, { method: "POST" }),
   listTasks: (status = "open") => request(`/api/v1/tasks?status=${status}`),
   patchTask: (id, changes) =>
     request(`/api/v1/tasks/${id}`, { method: "PATCH", body: changes }),

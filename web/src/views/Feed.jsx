@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate, useQuery } from "../router.js";
-import { Badge, ErrorBanner, Loading, Tags, TagFilterBar } from "../components.jsx";
+import {
+  Badge,
+  ErrorBanner,
+  Loading,
+  ResearchStatus,
+  Tags,
+  TagFilterBar,
+} from "../components.jsx";
 
 function NoteCard({ note, selectedTags, onTagClick }) {
   // Agent output (digest/review/research) gets the accented card; captures
@@ -17,6 +24,7 @@ function NoteCard({ note, selectedTags, onTagClick }) {
         <span className="muted">{relativeTime(note.created_at)}</span>
       </div>
       <p className="note-summary">{note.summary || note.body}</p>
+      <ResearchStatus status={note.research_status} />
       <Tags tags={note.tags} selected={selectedTags} onTagClick={onTagClick} />
     </div>
   );
@@ -68,17 +76,17 @@ export default function Feed({ pendingCaptures, refreshToken }) {
     [tagKey],
   );
 
-  // "Research pending" badge: poll running operations while any exist. When
-  // the count drops to zero a report note has (or may have) landed, so bump
-  // opsSettled to refetch the feed without a manual reload.
-  const [runningOps, setRunningOps] = useState(0);
+  // Notes carry their own research_status now, so the cards say what is
+  // pending. This poll is only the refetch trigger: when the running count
+  // drops to zero a report has landed (or a run died), and the feed needs to
+  // be re-read to show it.
   const [opsSettled, setOpsSettled] = useState(0);
   const prevRunning = useRef(0);
   useEffect(() => {
     let alive = true;
     let timer = null;
     async function poll() {
-      let count = null; // null = this poll failed; the badge is best-effort
+      let count = null; // null = this poll failed; refetching is best-effort
       try {
         count = (await api.listOperations("running")).operations.length;
       } catch {
@@ -88,7 +96,6 @@ export default function Feed({ pendingCaptures, refreshToken }) {
       if (count !== null) {
         if (prevRunning.current > 0 && count === 0) setOpsSettled((n) => n + 1);
         prevRunning.current = count;
-        setRunningOps(count);
       }
       timer = setTimeout(poll, count ? OPS_POLL_MS : OPS_IDLE_POLL_MS);
     }
@@ -155,12 +162,6 @@ export default function Feed({ pendingCaptures, refreshToken }) {
         onRemove={toggleTag}
         onClear={() => setTags([])}
       />
-      {runningOps > 0 && (
-        <div className="research-pending">
-          <span className="spinner" /> research pending
-          {runningOps > 1 ? ` (${runningOps})` : ""}
-        </div>
-      )}
       {pendingCaptures.map((p) => (
         <PendingCard key={p.id} pending={p} />
       ))}
