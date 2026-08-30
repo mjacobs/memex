@@ -37,7 +37,7 @@ local operations still make progress (tests drive `poll_operation` directly).
 import json
 import logging
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import google.auth
 import google.auth.transport.requests
@@ -63,6 +63,8 @@ MAX_ATTEMPTS = 240
 HANDLELESS_MAX_ATTEMPTS = 4
 # One first-poll enqueue, retried: losing it strands a paid run unpolled.
 ENQUEUE_ATTEMPTS = 3
+# Losing this write throws away a handle we are holding on a paid run.
+HANDLE_WRITE_ATTEMPTS = 3
 
 
 def _accepted_before_failing(exc: BaseException) -> bool:
@@ -333,20 +335,18 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         _try_enqueue(op.id)
         return {"error": str(exc)}
 
-    try:
-        store.update_operation(op.id, {"interaction_id": interaction_id})
-    except Exception as exc:
-        # Same shape as above: the run is real and billing, and the handle is
-        # now only in the log. The operation is left running so the give-up
-        # path frees the note rather than stranding it.
-        logger.exception(
-            "could not record interaction %s on operation %s for note %s",
+    if not _record_handle(op.id, interaction_id):
+        # The run is real and billing and the handle is now only in the log.
+        # The operation stays running so the give-up path hands the note back
+        # rather than stranding it.
+        logger.error(
+            "interaction %s is running but could not be recorded on operation "
+            "%s; the report cannot be collected",
             interaction_id,
             op.id,
-            note_id,
         )
         _try_enqueue(op.id)
-        return {"error": str(exc)}
+        return {"error": f"could not record interaction {interaction_id}"}
 
     if not _try_enqueue(op.id):
         # Every retry failed. The operation stays *running*, not failed: the
@@ -359,6 +359,27 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
         )
         return {"error": f"could not enqueue the first poll for operation {op.id}"}
     return {"operation_id": op.id}
+
+
+def _record_handle(operation_id: str, interaction_id: str) -> bool:
+    """Write the interaction id onto its operation, retried.
+
+    Losing this write throws away a handle we are holding, and the poll then
+    treats a real paid run as one that never started — so it is worth more
+    than one attempt.
+    """
+    for attempt in range(HANDLE_WRITE_ATTEMPTS):
+        try:
+            store.update_operation(operation_id, {"interaction_id": interaction_id})
+            return True
+        except Exception:
+            logger.exception(
+                "recording the handle on operation %s failed (%s/%s)",
+                operation_id,
+                attempt + 1,
+                HANDLE_WRITE_ATTEMPTS,
+            )
+    return False
 
 
 def _try_enqueue(operation_id: str) -> bool:
@@ -411,15 +432,21 @@ def _report_from_steps(steps: list[dict]) -> str:
     return _step_text(steps[-1]) if steps else ""
 
 
-def _trace_from_steps(steps: list) -> list[TraceEvent]:
-    """Map Deep Research steps to the contract's TraceEvent shape."""
+def _trace_from_steps(steps: list, t: datetime | None = None) -> list[TraceEvent]:
+    """Map Deep Research steps to the contract's TraceEvent shape.
+
+    `t` stamps every event with one fixed time instead of the wall clock. The
+    merge passes the operation's own created_at so two deliveries produce
+    byte-identical events, which is what lets Firestore's array union treat
+    the second one as nothing to add.
+    """
     events: list[TraceEvent] = []
     for step in steps:
         if not isinstance(step, dict):
             continue
         text = _step_trace_text(step)
         if text:
-            events.append(TraceEvent(t=store.now(), role="model", text=text))
+            events.append(TraceEvent(t=t or store.now(), role="model", text=text))
     return events
 
 
@@ -475,7 +502,9 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
     # own timestamps, so Firestore's value dedupe would not catch that.
     new_trace = [
         e.model_dump(mode="python")
-        for e in _trace_from_steps(steps)
+        # Stamped with the operation's own creation time, not the wall clock,
+        # so two deliveries of this merge produce identical events.
+        for e in _trace_from_steps(steps, t=op.created_at)
         if (e.role, e.text) not in already_traced
     ]
     if new_trace:

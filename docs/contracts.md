@@ -265,7 +265,7 @@ status. Static frontend served at `/` (SPA fallback); API under `/api/v1`.
 | `GET /api/v1/captures/{id}/image`    | kind=image only                                    | `200` raw image bytes (`Content-Type` = `image_mime`) |
 | `GET /api/v1/notes`                  | `?limit=50&before=<ulid>&tag=&kind=`               | `200 {notes: […]}` newest-first            |
 | `GET /api/v1/notes/{id}`             |                                                    | `200 {note}` incl. `trace`; plus `image_url` for image captures |
-| `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event |
+| `PATCH /api/v1/notes/{id}`           | `{"summary?", "body?", "tags?"}` (unknown fields 422) | `200 {note}`; appends a `role:"user"` trace event. `409 research_running` while a run is in flight, because the report would overwrite the edit |
 | `POST /api/v1/notes/{id}/research`   |                                                    | `202 {"operation_id", "status": "running"}` — research a note that already exists; never merges. `409 already_running` while one is in flight |
 | `DELETE /api/v1/notes/{id}`          |                                                    | `200 {"deleted": "<id>"}` hard delete; cascades to capture doc + GCS blob, not tasks |
 | `GET /api/v1/tasks`                  | `?status=open` (default open)                      | `200 {tasks: […]}`                         |

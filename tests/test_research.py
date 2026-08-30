@@ -1328,3 +1328,50 @@ def test_a_merge_from_a_superseded_run_does_not_rewrite_the_note(
     assert refreshed is not None
     assert refreshed.body == "the original question", "not rewritten by the old run"
     assert refreshed.kind == "capture"
+
+
+def test_patching_a_note_under_research_is_refused(fs, client):
+    """The SPA hides the edit button, but a stale page or another client
+    would not know: the refusal has to live on the server."""
+    note = _make_note()
+    store.update(Note, note.id, {"research_status": "running"})
+
+    r = client.patch(
+        f"/api/v1/notes/{note.id}", json={"body": "a stale draft"}, headers=AUTH
+    )
+
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "research_running"
+    assert store.get(Note, note.id).body == "look into rust pinning"
+
+
+def test_patching_is_allowed_once_the_run_settles(fs, client):
+    note = _make_note()
+    store.update(Note, note.id, {"research_status": "completed"})
+
+    r = client.patch(f"/api/v1/notes/{note.id}", json={"body": "edited"}, headers=AUTH)
+
+    assert r.status_code == 200
+
+
+def test_a_recorded_handle_survives_a_flaky_write(fs, enqueued, monkeypatch):
+    """Throwing away a handle we are holding turns a real paid run into one
+    the poll treats as never started."""
+    note = _make_note()
+    monkeypatch.setattr(research, "_create_interaction", lambda prompt: "i-42")
+    calls: list[int] = []
+    real_update = store.update_operation
+
+    def flaky(operation_id: str, changes: dict) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("transient")
+        real_update(operation_id, changes)
+
+    monkeypatch.setattr(store, "update_operation", flaky)
+
+    out = research.start_research_operation(note.id)
+
+    assert "operation_id" in out
+    [op] = store.list_operations()
+    assert op.interaction_id == "i-42"

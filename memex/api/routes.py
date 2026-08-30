@@ -488,6 +488,18 @@ def patch_note(note_id: str, body: NotePatch) -> dict:
     changed = [f for f in ("summary", "body", "tags") if f in updates]
     if not changed:
         raise ApiError(400, "empty_update", "no updatable fields given")
+    # A run in flight may rewrite this note into its report at any moment, and
+    # PATCH replaces whole fields — so an edit begun before the report landed
+    # would save over a report that cost money. The SPA hides the edit button
+    # for this, but a stale page or another client would not know, so the
+    # refusal lives here where every caller meets it.
+    if note.research_status == "running":
+        raise ApiError(
+            409,
+            "research_running",
+            f"note {note_id} is being researched; edits would be overwritten "
+            "by the report",
+        )
     # The trace is the honesty surface: an owner edit is recorded as a user
     # event alongside the model's own work, not applied silently.
     args: dict = {"fields": changed}
