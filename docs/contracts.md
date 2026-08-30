@@ -236,8 +236,11 @@ running operations (kata `wz2g`).
   either pair leaves a note reading as `running` whose owning operation is
   missing or already finished, and nothing polls it. A transaction across the
   two documents would close it; the cheaper answer is reconciliation — wz2g's
-  sweep picks these up with one more query, for notes claimed by an operation
-  that is gone or terminal.
+  sweep also queries notes whose `research_status` is `running` and looks up
+  the operation each one names in `research_operation_id`, releasing only the
+  notes whose own operation is missing or terminal. Note-first, and one
+  lookup per note: comparing against a page of running operations would
+  release notes whose operation simply fell outside that page.
 
 ### `operations/{id}`
 
