@@ -196,6 +196,14 @@ simply never starts a run; the user can still ask for one from chat with
 `start_research`. Same reasoning as the bare-link action-items gate — what a
 website chose to say is not the user asking for anything.
 
+The operation doc is written *before* the interaction is created, so the
+durable record is always at least as old as the spend. A create that fails in
+a way known to precede acceptance — a refused connection, a 4xx — releases the
+note, because nothing was bought. Anything else (a timeout, a 5xx, a response
+with no id) may have been accepted and billed, so the note stays claimed and
+the handle-less operation is what eventually hands it back; releasing it there
+is how an immediate retry buys a second report.
+
 Failure to *start* must not fail the capture, but must not be silent either:
 the sync capture response carries `research` — `{"operation_id": …}` when the
 run started, `{"error": …}` when it could not — so a failed kickoff is
@@ -213,7 +221,7 @@ decoupled from any Cloud Run instance. Deep Research is the first kind.
 | `status`         | `"running" \| "completed" \| "failed"`      |                                      |
 | `created_at`     | timestamp                                   |                                      |
 | `updated_at`     | timestamp                                   | touch on every mutation              |
-| `interaction_id` | string                                      | the aiplatform handle                |
+| `interaction_id?`| string                                      | the aiplatform handle. Absent while the operation is a kickoff intent written *before* the interaction exists, and after a create whose outcome was never learned — such a run has nothing to poll and is given up on within a few polls |
 | `source_note_id` | ulid                                        | the note that asked for research     |
 | `result_note_id?`| ulid                                        | the `research` note, when completed; equals `source_note_id` when merged |
 | `merge_into_source`| bool                                      | completion rewrites the asking note instead of adding one; set only by the capture-time path |

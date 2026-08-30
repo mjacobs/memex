@@ -201,7 +201,13 @@ def test_start_research_create_failure_returns_error(fs, enqueued, monkeypatch):
 
     out = research.start_research_operation(note.id)
     assert "error" in out
-    assert store.list_operations() == []
+    # A refused connection is known to happen before the provider could
+    # accept, so nothing was bought: the kickoff record is failed and the note
+    # handed back rather than left busy over an outage.
+    [op] = store.list_operations()
+    assert op.status == "failed" and op.interaction_id is None
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status is None
     assert enqueued == []
 
 
@@ -215,9 +221,14 @@ def test_start_research_enqueue_failure_fails_operation(fs, monkeypatch):
     monkeypatch.setattr(research, "_enqueue_poll", boom)
 
     out = research.start_research_operation(note.id)
-    assert "enqueue failed" in out["error"]
+    assert "could not enqueue" in out["error"]
+    # Left *running*, not failed: the interaction is real, the state matches
+    # the note, and anything that later polls it finishes the run. Failing it
+    # here would leave the note claimed with nothing able to reconcile it.
     [op] = store.list_operations()
-    assert op.status == "failed" and "no queue" in (op.error or "")
+    assert op.status == "running" and op.interaction_id == "i-42"
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status == "running"
 
 
 def test_enqueue_poll_inline_mode_skips_cloud_tasks(monkeypatch):
@@ -1024,13 +1035,18 @@ def test_only_one_of_two_racing_kickoffs_creates_an_interaction(
 
 
 def test_a_kickoff_that_dies_hands_the_note_back(fs, enqueued, monkeypatch):
-    """A claim that never became a run must not leave the note busy forever,
-    or it could never be researched again."""
+    """A request the provider refused outright never became a run, so the
+    note must not be left busy over it."""
     note = _make_note()
+    refused = httpx.HTTPStatusError(
+        "bad request",
+        request=httpx.Request("POST", "https://example.com/interactions"),
+        response=httpx.Response(400),
+    )
     monkeypatch.setattr(
         research,
         "_create_interaction",
-        lambda prompt: (_ for _ in ()).throw(RuntimeError("no quota")),
+        lambda prompt: (_ for _ in ()).throw(refused),
     )
 
     out = research.start_research_operation(note.id)
@@ -1136,19 +1152,18 @@ def test_search_finds_a_merged_report_by_the_question_it_answers(fs):
     assert [n["id"] for n in hits] == [note.id]
 
 
-def test_a_lost_operation_write_does_not_free_the_note_to_buy_another(
-    fs, enqueued, monkeypatch
-):
-    """Once the interaction exists it is billing.
+def test_an_ambiguous_create_keeps_the_claim(fs, enqueued, monkeypatch):
+    """A timeout may have been accepted and billed.
 
-    Releasing the claim here would let a retry create a second one, so the
-    note stays claimed: a note that reads as busy is a worse experience than
-    a duplicate report is a cost.
+    Releasing the claim here would let an immediate retry buy a second report,
+    so the note stays claimed and the handle-less operation is what eventually
+    gives it back.
     """
     note = _make_note()
-    monkeypatch.setattr(research, "_create_interaction", lambda prompt: "i-paid")
     monkeypatch.setattr(
-        store, "put", lambda entity: (_ for _ in ()).throw(RuntimeError("firestore"))
+        research,
+        "_create_interaction",
+        lambda prompt: (_ for _ in ()).throw(httpx.ReadTimeout("timed out")),
     )
 
     out = research.start_research_operation(note.id)
@@ -1157,6 +1172,54 @@ def test_a_lost_operation_write_does_not_free_the_note_to_buy_another(
     refreshed = store.get(Note, note.id)
     assert refreshed is not None and refreshed.research_status == "running"
     assert store.claim_note_research(note.id, new_ulid()) is False
+    # The kickoff record survives with no handle, so polling can give up on it.
+    [op] = store.list_operations()
+    assert op.status == "running" and op.interaction_id is None
+
+
+def test_a_handleless_run_gives_the_note_back_after_a_short_wait(
+    fs, enqueued, monkeypatch
+):
+    """Nothing to poll, so it only counts down — long enough that an immediate
+    retry cannot buy a second report, short enough not to block a later one."""
+    note = _make_note()
+    op = _make_operation(
+        source_note_id=note.id,
+        interaction_id=None,
+        attempts=research.HANDLELESS_MAX_ATTEMPTS - 1,
+    )
+    store.claim_note_research(note.id, op.id)
+    monkeypatch.setattr(
+        research,
+        "_get_interaction",
+        lambda iid: pytest.fail("there is no handle to poll"),
+    )
+
+    out = research.poll_operation(op.id)
+
+    assert out["status"] == "failed"
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status == "failed"
+    assert store.claim_note_research(note.id, new_ulid()) is True
+
+
+def test_resuming_a_merge_does_not_write_the_report_trace_twice(
+    fs, enqueued, monkeypatch
+):
+    """Two deliveries can both resume a reserved merge; the second must find
+    the report's reasoning already recorded and add nothing."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id, merge_into_source=True)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    research.poll_operation(op.id)
+    once = [(e.role, e.text) for e in store.get(Note, source.id).trace]
+    research._merge_research_into_source(
+        store.get(Operation, op.id), _report_interaction()
+    )
+    twice = [(e.role, e.text) for e in store.get(Note, source.id).trace]
+
+    assert once == twice
 
 
 def test_a_merge_that_failed_after_reserving_can_resume(fs, enqueued, monkeypatch):

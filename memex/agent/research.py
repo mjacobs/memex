@@ -56,6 +56,29 @@ RESEARCH_REPORT_TAG = "research-report"
 POLL_DELAY_SECONDS = 30
 # ~240 polls x 30 s ≈ 2 h — the documented hard cap on a Deep Research run.
 MAX_ATTEMPTS = 240
+# An operation with no interaction handle has nothing to wait for, so it gets
+# a much shorter cap: a couple of minutes holding the note, then the run is
+# failed and the note freed. Long enough that an immediate retry cannot buy a
+# second report, short enough that a deliberate one later is not blocked.
+HANDLELESS_MAX_ATTEMPTS = 4
+# One first-poll enqueue, retried: losing it strands a paid run unpolled.
+ENQUEUE_ATTEMPTS = 3
+
+
+def _accepted_before_failing(exc: BaseException) -> bool:
+    """Could the provider have accepted (and billed) this request?
+
+    Only failures known to happen *before* acceptance are safe to treat as
+    "nothing was bought" — a refused connection, or a 4xx the service decided
+    on. A timeout, a 5xx, or a 200 we could not parse all leave a run that may
+    be underway, and releasing the note for those is how a retry buys a
+    second report.
+    """
+    if isinstance(exc, httpx.ConnectError):
+        return False
+    if isinstance(exc, httpx.HTTPStatusError):
+        return not (400 <= exc.response.status_code < 500)
+    return True
 
 _PROMPT_PREFIX = """\
 You are a research assistant for a personal memex. Below is a note the user
@@ -261,60 +284,97 @@ def start_research_operation(note_id: str, merge_into_source: bool = False) -> d
             "error": f"note {note_id} already has a research run",
             "code": "already_running",
         }
+
+    # The operation is written before the interaction exists, as a kickoff
+    # intent. Creating the paid run first and recording it second means any
+    # failure in between leaves a billed run with no durable trace of it; this
+    # way the record is always at least as old as the spend.
+    op = Operation(
+        id=operation_id,
+        kind="deep_research",
+        created_at=store.now(),
+        updated_at=store.now(),
+        interaction_id=None,
+        source_note_id=note_id,
+        merge_into_source=merge_into_source,
+    )
+    try:
+        store.put(op)
+    except Exception as exc:
+        logger.exception("could not record the kickoff for note %s", note_id)
+        # Nothing was created and nothing spent, so hand the note back.
+        store.settle_note_research(note_id, operation_id, note.research_status)
+        return {"error": str(exc)}
+
     try:
         interaction_id = _create_interaction(_research_prompt(note))
     except Exception as exc:
-        logger.exception("failed to create the interaction for note %s", note_id)
-        # KNOWN LIMIT: this treats every failure as "nothing was created", and
-        # hands the note back so it is not stuck busy after, say, a bad
-        # request. A timeout is the exception — the provider may have accepted
-        # and billed a run whose id never reached us, and a retry would then
-        # buy a second. Closing that needs either an idempotency key on the
-        # interactions API or a durable kickoff record reconciled afterwards,
-        # neither of which the API is known to support today. The exposure is
-        # one duplicate report in a narrow window, against a note stuck busy
-        # forever on every ordinary failure, which is the worse trade.
-        store.settle_note_research(note_id, operation_id, note.research_status)
-        return {"error": str(exc)}
-    try:
-        op = Operation(
-            id=operation_id,
-            kind="deep_research",
-            created_at=store.now(),
-            updated_at=store.now(),
-            interaction_id=interaction_id,
-            source_note_id=note_id,
-            merge_into_source=merge_into_source,
-        )
-        store.put(op)
-    except Exception as exc:
-        # The interaction exists and is billing. Releasing the note here would
-        # let a retry buy a second one, so the claim stands: a note that reads
-        # as busy is a worse experience than a duplicate report is a cost.
-        # The interaction id goes in the log because it is now the only handle
-        # anyone has on the run.
+        if not _accepted_before_failing(exc):
+            # Refused outright: nothing is running, so fail the operation and
+            # hand the note back rather than leaving it busy over a 400.
+            logger.warning(
+                "interaction for note %s was refused before acceptance: %s",
+                note_id,
+                exc,
+            )
+            store.update_operation(op.id, {"status": "failed", "error": str(exc)})
+            store.settle_note_research(note_id, operation_id, note.research_status)
+            return {"error": str(exc)}
+        # The provider may have accepted and billed a run whose id never
+        # reached us. The claim stands so a retry cannot immediately buy a
+        # second, and the operation stays running with no handle — polling it
+        # is what eventually gives up and frees the note.
         logger.exception(
-            "lost the handle on interaction %s for note %s — it is running "
-            "unpolled; the note stays claimed so a retry cannot buy a second",
+            "lost the outcome of the interaction for note %s; operation %s has "
+            "no handle and will be given up on",
+            note_id,
+            op.id,
+        )
+        _try_enqueue(op.id)
+        return {"error": str(exc)}
+
+    try:
+        store.update_operation(op.id, {"interaction_id": interaction_id})
+    except Exception as exc:
+        # Same shape as above: the run is real and billing, and the handle is
+        # now only in the log. The operation is left running so the give-up
+        # path frees the note rather than stranding it.
+        logger.exception(
+            "could not record interaction %s on operation %s for note %s",
             interaction_id,
+            op.id,
             note_id,
         )
+        _try_enqueue(op.id)
         return {"error": str(exc)}
-    try:
-        _enqueue_poll(op.id)
-    except Exception as exc:
-        # The interaction is running server-side but nothing will ever poll
-        # it; fail the operation so the queue doesn't show it running forever.
-        logger.exception("failed to enqueue first poll for operation %s", op.id)
-        # Same reasoning as a lost operation write above: the interaction is
-        # created and billing, so freeing the note would let a retry buy a
-        # second one. The operation is failed because nothing will poll it,
-        # but the note stays claimed.
-        store.update_operation(
-            op.id, {"status": "failed", "error": f"enqueue failed: {exc}"}
+
+    if not _try_enqueue(op.id):
+        # Every retry failed. The operation stays *running*, not failed: the
+        # state is consistent with the note, it is visible in the queue, and
+        # anything that later polls it — the inline sweeper, or a manual
+        # /internal/operations/poll — finishes the run. Failing it here would
+        # leave a note claimed forever with nothing able to reconcile it.
+        logger.error(
+            "operation %s is running unpolled; poll it to finish the run", op.id
         )
-        return {"error": f"enqueue failed: {exc}"}
+        return {"error": f"could not enqueue the first poll for operation {op.id}"}
     return {"operation_id": op.id}
+
+
+def _try_enqueue(operation_id: str) -> bool:
+    """Enqueue the first poll, retried. False when every attempt failed."""
+    for attempt in range(ENQUEUE_ATTEMPTS):
+        try:
+            _enqueue_poll(operation_id)
+            return True
+        except Exception:
+            logger.exception(
+                "enqueue attempt %s/%s failed for operation %s",
+                attempt + 1,
+                ENQUEUE_ATTEMPTS,
+                operation_id,
+            )
+    return False
 
 
 def _step_text(step: dict, key: str = "content") -> str:
@@ -396,6 +456,7 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
     steps = [s for s in interaction.get("steps") or [] if isinstance(s, dict)]
     original_body = note.original_body if note.original_body is not None else note.body
     tags = [t for t in note.tags if t != RESEARCH_REPORT_TAG]
+    already_traced = {(e.role, e.text) for e in note.trace}
     changes = {
         "kind": "research",
         "body": _report_from_steps(steps),
@@ -404,16 +465,23 @@ def _merge_research_into_source(op: Operation, interaction: dict) -> Note | None
         if not note.summary.startswith("Research report:")
         else note.summary,
         "tags": [RESEARCH_REPORT_TAG, *tags],
-        # Appended, never replaced: the note already carries how it became a
-        # note, plus a user event for every owner edit. The trace is the
-        # honesty surface, and overwriting it here would erase the note's own
-        # provenance to make room for the report's. Appended server-side so a
-        # concurrent edit's event is not lost; a replayed completion can
-        # duplicate the research events, which is the cheaper failure.
-        "trace": store.array_union(
-            [e.model_dump(mode="python") for e in _trace_from_steps(steps)]
-        ),
     }
+    # The trace is appended, never replaced: the note already carries how it
+    # became a note, plus a user event for every owner edit, and overwriting
+    # that to make room for the report's reasoning would erase the note's own
+    # provenance. Appended server-side so a concurrent edit's event is not
+    # lost, and filtered against what is already there so two deliveries
+    # resuming the same merge cannot write it twice — the events carry their
+    # own timestamps, so Firestore's value dedupe would not catch that.
+    new_trace = [
+        e.model_dump(mode="python")
+        for e in _trace_from_steps(steps)
+        if (e.role, e.text) not in already_traced
+    ]
+    if new_trace:
+        # An empty union is an error, and a redelivery that finds every event
+        # already recorded has nothing to add.
+        changes["trace"] = store.array_union(new_trace)
     # Ownership-guarded like every other terminal write: a merge belonging to
     # a superseded run must not rewrite a note a newer run has claimed.
     if not store.settle_note_research(note.id, op.id, "completed", extra=changes):
@@ -487,6 +555,25 @@ def poll_operation(operation_id: str) -> dict:
         # Cloud Tasks delivery is at-least-once; a settled operation is done.
         return _deduped(op)
     attempts = op.attempts + 1
+    if op.interaction_id is None:
+        # A kickoff whose outcome we never learned. There is nothing to poll,
+        # so this only counts down: the note stays claimed for a couple of
+        # minutes — long enough that an immediate retry cannot buy a second
+        # report — and is then freed so a deliberate one later is not blocked.
+        if attempts >= HANDLELESS_MAX_ATTEMPTS:
+            error = "the interaction id was never recorded; giving up"
+            _mark_note_failed(op.source_note_id, op.id)
+            if not store.transition_operation(
+                op.id,
+                "running",
+                {"status": "failed", "attempts": attempts, "error": error},
+            ):
+                return _deduped(op)
+            return {"operation_id": op.id, "status": "failed", "error": error}
+        if not store.transition_operation(op.id, "running", {"attempts": attempts}):
+            return _deduped(op)
+        _enqueue_poll(op.id)
+        return {"operation_id": op.id, "status": "running", "attempts": attempts}
     try:
         interaction = _get_interaction(op.interaction_id)
         status = interaction.get("status")
