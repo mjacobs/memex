@@ -9,7 +9,7 @@ operations CAS). Used when FIRESTORE_EMULATOR_HOST is unset.
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
-from google.api_core.exceptions import FailedPrecondition
+from google.api_core.exceptions import FailedPrecondition, NotFound
 from google.cloud.firestore_v1.transforms import ArrayUnion
 
 
@@ -49,7 +49,9 @@ class FakeDocument:
 
     def update(self, changes: dict, option: FakeWriteOption | None = None) -> None:
         if self._id not in self._collection.docs:
-            raise KeyError(f"no document {self._id}")
+            # What the real client raises, so callers can catch "gone"
+            # without also swallowing a transient failure.
+            raise NotFound(f"no document {self._id}")
         if option is not None and option.last_update_time != self._collection.times.get(
             self._id
         ):

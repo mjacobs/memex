@@ -1132,3 +1132,89 @@ def test_search_finds_a_merged_report_by_the_question_it_answers(fs):
     hits = tools.search_notes("mild climate")["notes"]
 
     assert [n["id"] for n in hits] == [note.id]
+
+
+def test_a_lost_operation_write_does_not_free_the_note_to_buy_another(
+    fs, enqueued, monkeypatch
+):
+    """Once the interaction exists it is billing.
+
+    Releasing the claim here would let a retry create a second one, so the
+    note stays claimed: a note that reads as busy is a worse experience than
+    a duplicate report is a cost.
+    """
+    note = _make_note()
+    monkeypatch.setattr(research, "_create_interaction", lambda prompt: "i-paid")
+    monkeypatch.setattr(
+        store, "put", lambda entity: (_ for _ in ()).throw(RuntimeError("firestore"))
+    )
+
+    out = research.start_research_operation(note.id)
+
+    assert "error" in out
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status == "running"
+    assert store.claim_note_research(note.id) is False
+
+
+def test_a_merge_that_failed_after_reserving_can_resume(fs, enqueued, monkeypatch):
+    """The reservation must not dedupe an operation against itself, or a
+    merge that threw mid-flight leaves the run permanently running."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id, merge_into_source=True)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    # First pass reserves, then dies inside the merge.
+    real_merge = research._merge_research_into_source
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("crash")
+
+    monkeypatch.setattr(research, "_merge_research_into_source", boom)
+    with pytest.raises(RuntimeError):
+        research.poll_operation(op.id)
+    assert store.get(Operation, op.id).result_note_id == source.id
+
+    # The redelivery resumes rather than deduping against its own reservation.
+    monkeypatch.setattr(research, "_merge_research_into_source", real_merge)
+    out = research.poll_operation(op.id)
+
+    assert out["status"] == "completed"
+    assert store.get(Operation, op.id).status == "completed"
+
+
+def test_a_transient_note_failure_does_not_settle_the_operation(
+    fs, enqueued, monkeypatch
+):
+    """Swallowing this would settle the run against a note stuck reading as
+    running, which nothing would ever repair."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id)
+    store.update(Note, source.id, {"research_status": "running"})
+    monkeypatch.setattr(
+        research,
+        "_get_interaction",
+        lambda iid: {"status": "failed", "errors": [{"message": "quota"}]},
+    )
+    monkeypatch.setattr(
+        store, "update", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("transient"))
+    )
+
+    with pytest.raises(RuntimeError):
+        research.poll_operation(op.id)
+
+    # Still running, so the poll comes back rather than stranding the note.
+    assert store.get(Operation, op.id).status == "running"
+
+
+def test_a_deleted_note_does_not_wedge_its_operation(fs, enqueued, monkeypatch):
+    """The other side of the same coin: gone is fine, and must settle."""
+    source = _make_note()
+    op = _make_operation(source_note_id=source.id)
+    store.delete(Note, source.id)
+    monkeypatch.setattr(research, "_get_interaction", lambda iid: _report_interaction())
+
+    out = research.poll_operation(op.id)
+
+    assert out["status"] == "completed"
+    assert store.get(Operation, op.id).status == "completed"
