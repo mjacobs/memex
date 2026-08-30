@@ -301,23 +301,43 @@ def start_research_operation(note_id: str) -> dict:
         store.put(op)
     except Exception as exc:
         logger.exception("could not record the kickoff for note %s", note_id)
-        # Nothing was created and nothing spent, so hand the note back.
-        store.settle_note_research(note_id, operation_id, note.research_status)
+        # Nothing was created and nothing spent, so hand the note back. If
+        # even that write fails, the note is claimed with no operation doc —
+        # the wz2g note-first sweep's case (contracts.md, Known limits) — and
+        # a kickoff must not raise at its caller either way.
+        try:
+            store.settle_note_research(note_id, operation_id, note.research_status)
+        except Exception:
+            logger.exception("could not hand note %s back either", note_id)
         return {"error": str(exc)}
 
     try:
         interaction_id = _create_interaction(_research_prompt(note))
     except Exception as exc:
         if not _accepted_before_failing(exc):
-            # Refused outright: nothing is running, so fail the operation and
-            # hand the note back rather than leaving it busy over a 400.
+            # Refused outright: nothing is running, so hand the note back and
+            # fail the operation — in that order, the same as every other
+            # terminal path. Failing the operation first and dying before the
+            # settle leaves a terminal run against a note stuck reading as
+            # busy, which nothing polls; this way a failure in between leaves
+            # the operation still running and handleless, and the countdown
+            # frees the note without us.
             logger.warning(
                 "interaction for note %s was refused before acceptance: %s",
                 note_id,
                 exc,
             )
-            store.update_operation(op.id, {"status": "failed", "error": str(exc)})
-            store.settle_note_research(note_id, operation_id, note.research_status)
+            try:
+                store.settle_note_research(note_id, operation_id, note.research_status)
+                store.update_operation(op.id, {"status": "failed", "error": str(exc)})
+            except Exception:
+                logger.exception(
+                    "could not settle the refused kickoff for note %s; leaving "
+                    "operation %s to the handleless countdown",
+                    note_id,
+                    op.id,
+                )
+                _try_enqueue(op.id)
             return {"error": str(exc)}
         # The provider may have accepted and billed a run whose id never
         # reached us. The claim stands so a retry cannot immediately buy a

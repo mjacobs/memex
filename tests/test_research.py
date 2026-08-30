@@ -1010,6 +1010,42 @@ def test_a_kickoff_that_dies_hands_the_note_back(fs, enqueued, monkeypatch):
     assert store.claim_note_research(note.id, new_ulid()) is True
 
 
+def test_a_refused_kickoff_that_cannot_settle_stays_reconcilable(
+    fs, enqueued, monkeypatch
+):
+    """If the refusal's cleanup writes fail too, the operation must be left
+    running — the handleless countdown frees the note — never settled as
+    failed against a note stuck reading as busy, which nothing polls."""
+    note = _make_note()
+    refused = httpx.HTTPStatusError(
+        "bad request",
+        request=httpx.Request("POST", "https://example.com/interactions"),
+        response=httpx.Response(400),
+    )
+    monkeypatch.setattr(
+        research,
+        "_create_interaction",
+        lambda prompt: (_ for _ in ()).throw(refused),
+    )
+    monkeypatch.setattr(
+        research.store,
+        "settle_note_research",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("store down")),
+    )
+
+    out = research.start_research_operation(note.id)
+
+    assert "error" in out
+    ops = store.list_operations(status="running", limit=10)
+    assert [op.source_note_id for op in ops] == [note.id], (
+        "the operation must stay running so the countdown can reconcile it"
+    )
+    refreshed = store.get(Note, note.id)
+    assert refreshed is not None and refreshed.research_status == "running", (
+        "the claim stands until the countdown frees it"
+    )
+
+
 def test_completion_leaves_the_asking_notes_trace_alone(fs, enqueued, monkeypatch):
     """The trace is the honesty surface: how the note became a note, plus a
     user event per owner edit. The report's reasoning belongs to the report's
