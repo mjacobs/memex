@@ -241,6 +241,15 @@ running operations (kata `wz2g`).
   notes whose own operation is missing or terminal. Note-first, and one
   lookup per note: comparing against a page of running operations would
   release notes whose operation simply fell outside that page.
+- **A report deleted in the completion window can come back.** The report
+  note is written with a create, not a set, so a redelivery cannot rewrite
+  one the user has since edited — but deletion frees the id, and a create
+  cannot tell "never written" from "deleted", so a report deleted between
+  the note write and the operation settling is recreated by the redelivery.
+  The window is the seconds between those two writes, and the cost is a
+  resurrected report to delete again — accepted (Matt, 2026-08-30). Closing
+  it needs a durable published marker on the operation, distinct from
+  `result_note_id`, which is reserved before the note exists.
 
 ### `operations/{id}`
 
