@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, relativeTime } from "../api.js";
 import { navigate } from "../router.js";
 import { Badge, ErrorBanner, ErrorBlock, Loading, Markdown, Trace } from "../components.jsx";
+import { previewText } from "../preview.js";
 
 const ROUTINE_LABELS = {
   daily_review: "Daily review",
@@ -41,7 +42,7 @@ export function RunList() {
               </span>
               <span className="muted">{relativeTime(r.fired_at)}</span>
             </div>
-            {r.summary && <p className="note-summary">{r.summary}</p>}
+            {r.summary && <p className="note-summary">{previewText(r.summary)}</p>}
             {r.error && <p className="run-error-preview">{r.error}</p>}
           </div>
         ))
