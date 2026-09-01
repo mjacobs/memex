@@ -341,11 +341,14 @@ def run_routine(routine: str) -> dict:
         run.trace = result.trace
         run.note_id = ctx.note_ids[-1] if ctx.note_ids else None
         run.approval_ids = ctx.approval_ids
-        if run.note_id is None:
-            # Both routines must end in create_note; a run without one is
-            # incomplete and should be retried by the scheduler.
+        if run.note_id is None and run.approval_ids:
+            # The prompts require every queued proposal to be documented in
+            # the review/digest note, so approvals without a note mean the
+            # session died before finishing; let the scheduler retry it. A
+            # session that wrote neither is the prompts' quiet path ("nothing
+            # to report means report nothing") — a success with no artifacts.
             run.status = "failed"
-            run.error = "routine session produced no note"
+            run.error = "routine session queued approvals but produced no note"
         else:
             run.status = "succeeded"
     except Exception as exc:
