@@ -32,6 +32,7 @@ from memex.models import (
     Note,
     Task,
     TaskStatus,
+    TaskUpdateAction,
     TraceEvent,
     clean_tags,
 )
@@ -214,12 +215,29 @@ def queue_approval(action: dict, reason: str) -> dict:
 
     action: {"type": "task_update", "task_id", "changes"} or
             {"type": "task_create", "task": {...}} per the Action contract.
+
+    An identical pending proposal is returned instead of queued again
+    ("duplicate": true), and a task_update the task already reflects is
+    skipped.
     """
     try:
         validated = _action_adapter.validate_python(action)
     except ValidationError as exc:
         return {"error": f"invalid action: {exc.errors(include_url=False)}"}
     ctx = _run_context.get()
+    # Routines see the task list, not the queue, so a daily review re-proposes
+    # every change still awaiting sign-off. Collapse those onto the pending
+    # approval instead of stacking a copy per run.
+    if isinstance(validated, TaskUpdateAction):
+        task = store.get(Task, validated.task_id)
+        if task is not None and _already_applied(task, validated.changes):
+            return {"skipped": "task already has these changes"}
+    wanted = validated.model_dump(mode="json")
+    for pending in store.query(
+        Approval, filters=[("status", "==", "pending")], limit=500
+    ):
+        if pending.action.model_dump(mode="json") == wanted:
+            return {"approval_id": pending.id, "duplicate": True}
     approval = Approval(
         id=new_ulid(),
         created_at=store.now(),
@@ -231,6 +249,11 @@ def queue_approval(action: dict, reason: str) -> dict:
     if ctx is not None:
         ctx.approval_ids.append(approval.id)
     return {"approval_id": approval.id}
+
+
+def _already_applied(task: Task, changes: dict) -> bool:
+    current = task.model_dump(mode="json")
+    return all(k in current and current[k] == v for k, v in changes.items())
 
 
 def _edit_summary(fields: list[str]) -> str:

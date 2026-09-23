@@ -91,3 +91,50 @@ def test_reject(client, fs):
 def test_approve_missing_approval_404(client, fs):
     r = client.post("/api/v1/approvals/nope/approve", headers=AUTH)
     assert r.status_code == 404
+
+
+def test_queue_approval_reuses_identical_pending_proposal(fs):
+    from memex.agent import tools
+
+    task = _make_task()
+    action = {"type": "task_update", "task_id": task.id, "changes": {"status": "done"}}
+    first = tools.queue_approval(action, reason="looks finished")
+    with tools.run_context("run2") as ctx:
+        again = tools.queue_approval(action, reason="worded differently")
+    assert again == {"approval_id": first["approval_id"], "duplicate": True}
+    assert ctx.approval_ids == []
+    pending = store.query(Approval, filters=[("status", "==", "pending")])
+    assert [a.id for a in pending] == [first["approval_id"]]
+
+
+def test_queue_approval_requeues_after_resolution_or_different_change(fs):
+    from memex.agent import tools
+
+    task = _make_task()
+    _make_approval(
+        {"type": "task_update", "task_id": task.id, "changes": {"status": "done"}},
+        status="rejected",
+    )
+    requeued = tools.queue_approval(
+        {"type": "task_update", "task_id": task.id, "changes": {"status": "done"}},
+        reason="r",
+    )
+    other = tools.queue_approval(
+        {"type": "task_update", "task_id": task.id, "changes": {"status": "dropped"}},
+        reason="r",
+    )
+    assert "duplicate" not in requeued and "duplicate" not in other
+    assert requeued["approval_id"] != other["approval_id"]
+
+
+def test_queue_approval_skips_change_task_already_has(fs):
+    from memex.agent import tools
+
+    task = _make_task()
+    store.update(Task, task.id, {"status": "done"})
+    out = tools.queue_approval(
+        {"type": "task_update", "task_id": task.id, "changes": {"status": "done"}},
+        reason="r",
+    )
+    assert "skipped" in out
+    assert store.query(Approval, filters=[("status", "==", "pending")]) == []
