@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 
 const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+// Shorter than this is an accidental tap, not a memo.
+const MIN_RECORDING_MS = 1000;
 
 function pickMime() {
   if (typeof MediaRecorder === "undefined") return null;
@@ -101,6 +103,7 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
     }
     const recorder = new MediaRecorder(stream, { mimeType: mime });
     const chunks = [];
+    let startedAt = 0;
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data);
     };
@@ -111,6 +114,12 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
       const blob = new Blob(chunks, { type: mime });
       if (blob.size === 0) {
         onError("empty recording");
+        return;
+      }
+      // An accidental tap still yields a few KB of near-silence, and the
+      // model will happily "transcribe" a memo out of it. Don't upload it.
+      if (Date.now() - startedAt < MIN_RECORDING_MS) {
+        onError("recording too short — nothing captured");
         return;
       }
       const contentType = mime.split(";")[0]; // server keys on the bare type
@@ -130,6 +139,7 @@ export default function Composer({ onPending, onUpdatePending, onSettled, onErro
     };
     recorderRef.current = recorder;
     recorder.start();
+    startedAt = Date.now();
     setRecording(true);
   };
 

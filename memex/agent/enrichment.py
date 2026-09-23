@@ -29,7 +29,10 @@ Return JSON with:
 - tags: 1-5 lowercase kebab-case topic tags.
 - action_items: concrete to-dos the memo commits to or requests, each with a
   short imperative title. Empty list if none.
-Do not invent content that is not in the audio.
+Do not invent content that is not in the audio. If the recording has no
+intelligible speech (silence, background noise, a clip cut off before anyone
+spoke), return an empty transcript, an empty summary, no tags and no action
+items. Never guess at what the user might have meant to say.
 """
 
 _INSTRUCTION_TEXT = """\

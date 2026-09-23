@@ -379,3 +379,42 @@ def test_get_capture_404(client):
     r = client.get("/api/v1/captures/does-not-exist", headers=AUTH)
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "not_found"
+
+
+def test_audio_with_no_speech_fails_without_note_or_tasks(fs, monkeypatch):
+    from memex.agent import service
+    from memex.ids import new_ulid
+    from memex.models import ActionItem, Capture, EnrichmentResult, Note, Task
+    from memex.store import firestore as store
+
+    capture = Capture(
+        id=new_ulid(),
+        created_at=store.now(),
+        device_id="dev",
+        kind="audio",
+        audio_gcs_uri="gs://test-bucket/captures/x.webm",
+        audio_mime="audio/webm",
+        status="pending",
+    )
+    store.put(capture)
+    monkeypatch.setattr(service, "_download_gcs", lambda uri: b"\x00" * 64)
+    # The model returned an empty transcript but still made something up
+    # elsewhere; the empty transcript alone decides.
+    monkeypatch.setattr(
+        service,
+        "enrich_audio",
+        lambda audio, mime: EnrichmentResult(
+            transcript="  ",
+            summary="Schedule dentist",
+            tags=["health"],
+            action_items=[ActionItem(title="Schedule dentist")],
+        ),
+    )
+
+    out = service.enrich_capture(capture.id)
+
+    assert out["error"] == service.NO_SPEECH and out["note"] is None
+    stored = store.get(Capture, capture.id)
+    assert stored is not None
+    assert stored.status == "failed" and stored.error == service.NO_SPEECH
+    assert store.query(Note) == [] and store.query(Task) == []

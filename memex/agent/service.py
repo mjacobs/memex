@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 READ_LATER_TAG = "read-later"
+NO_SPEECH = "no speech detected"
 
 
 _MD_ESCAPE = str.maketrans({c: f"\\{c}" for c in "\\`*_[]<>"})
@@ -173,6 +174,21 @@ def enrich_capture(capture_id: str) -> dict:
                 )
             )
             result = enrich_audio(audio, mime)
+            if not result.transcript.strip():
+                # An accidental tap uploads a near-silent clip, and a model
+                # asked for a memo will write a plausible one. No speech means
+                # no note and no tasks; the composer shows the error.
+                store.update(
+                    Capture, capture_id, {"status": "failed", "error": NO_SPEECH}
+                )
+                capture.status = "failed"
+                capture.error = NO_SPEECH
+                return {
+                    "capture": capture.model_dump(mode="json"),
+                    "note": None,
+                    "tasks": [],
+                    "error": NO_SPEECH,
+                }
         elif capture.kind == "image":
             if not capture.image_gcs_uri:
                 raise ValueError("image capture has no image_gcs_uri")
